@@ -55,6 +55,21 @@ describe("renderMarkdownPreview", () => {
 		expect(container.querySelectorAll("div").length).toBeLessThan(200);
 	});
 
+	it("still drops hidden content when flattening deep nesting", () => {
+		const container = render(
+			`${"<div>".repeat(300)}shown<style>a{}</style><textarea>secret</textarea><script>x()</script>${"</div>".repeat(300)}`,
+		);
+
+		expect(container.textContent).toContain("shown");
+		expect(container.textContent).not.toMatch(/secret|a\{\}|x\(\)/);
+	});
+
+	it("keeps task checkboxes whatever the case of their type", () => {
+		const container = render('<input type="Checkbox" checked>');
+
+		expect(container.querySelector("input")?.checked).toBe(true);
+	});
+
 	it("keeps only allowlisted attributes", () => {
 		const container = render(
 			'<p class="modal-container" style="position:fixed" id="x" onclick="alert(1)" data-a="b">text</p>\n\n<a href="https://ok.example" ping="https://tracker.example" target="_blank">link</a>',
