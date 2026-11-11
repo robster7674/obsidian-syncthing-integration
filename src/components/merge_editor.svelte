@@ -2,11 +2,11 @@
 	import { MergeView } from "@codemirror/merge";
 	import { EditorState, type Text } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
-	import { marked } from "marked";
-	import { ButtonComponent, Notice } from "obsidian";
+	import { ButtonComponent, Notice, debounce } from "obsidian";
+	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { ConfirmModal } from "src/views/confirm_modal";
 	import { type MergeModal } from "src/views/merge_editor";
-	import { onMount } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 
 	export let originalContent = "this is the original text";
 	export let modifiedContent = "this is the modified text";
@@ -17,6 +17,12 @@
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let contentEditorB: Text;
 	let toolsContainer: HTMLDivElement;
+	let previewContent = originalContent;
+	const updatePreview = debounce(
+		(doc: Text) => (previewContent = doc.toString()),
+		250
+	);
+	onDestroy(() => updatePreview.cancel());
 
 	onMount(() => {
 		mergeEditor = new MergeView({
@@ -29,6 +35,7 @@
 					EditorView.updateListener.of((viewUpdate) => {
 						if (viewUpdate.docChanged) {
 							contentEditorA = viewUpdate.state.doc;
+							updatePreview(contentEditorA);
 						}
 					}),
 				],
@@ -115,15 +122,7 @@
 <div class="merge" bind:this={mergeEditorContainer}></div>
 
 <h3>Preview the merged file</h3>
-<div class="preview">
-	{#if contentEditorA}
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-		{@html marked(contentEditorA.toString())}
-	{:else}
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-		{@html marked(originalContent)}
-	{/if}
-</div>
+<div class="preview" use:markdownPreview={previewContent}></div>
 
 <div bind:this={toolsContainer} class="tools"></div>
 

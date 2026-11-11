@@ -2,8 +2,8 @@
 	import { unifiedMergeView } from "@codemirror/merge";
 	import { EditorState, type Transaction } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
-	import { marked } from "marked";
 	import { Notice, type TFile } from "obsidian";
+	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { type DiffModal } from "src/views/diff_modal";
 	import { MergeModal } from "src/views/merge_editor";
 	import { onMount } from "svelte";
@@ -150,19 +150,13 @@
 		{#await parentModal.app.vault.cachedRead(parentModal.originalFile)}
 			<p>Loading preview...</p>
 		{:then content}
-			<div class="preview">
-				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-				{@html marked(content)}
-			</div>
+			<div class="preview" use:markdownPreview={content}></div>
 		{/await}
 		<h2>Conflicting file preview</h2>
 		{#await parentModal.app.vault.cachedRead(currentConflict)}
 			<p>Loading preview...</p>
 		{:then content}
-			<div class="preview">
-				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-				{@html marked(content)}
-			</div>
+			<div class="preview" use:markdownPreview={content}></div>
 		{/await}
 	</div>
 </div>

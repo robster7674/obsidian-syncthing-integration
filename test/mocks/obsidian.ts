@@ -433,21 +433,34 @@ export function normalizePath(path: string): string {
 		.replace(/^\.\//, "");
 }
 
+/**
+ * Mirrors Obsidian: one pending call with the latest arguments. With
+ * `resetTimer`, each call pushes the deadline back.
+ */
 export function debounce<T extends unknown[]>(
 	callback: (...args: T) => unknown,
 	timeout: number,
 	resetTimer = false,
 ): ((...args: T) => void) & { cancel(): void } {
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let latest: T;
 	const debounced = (...args: T): void => {
-		if (resetTimer && timer !== undefined) {
+		latest = args;
+		if (timer !== undefined) {
+			if (!resetTimer) {
+				return;
+			}
 			clearTimeout(timer);
 		}
-		timer = setTimeout(() => callback(...args), timeout);
+		timer = setTimeout(() => {
+			timer = undefined;
+			callback(...latest);
+		}, timeout);
 	};
 	debounced.cancel = (): void => {
 		if (timer !== undefined) {
 			clearTimeout(timer);
+			timer = undefined;
 		}
 	};
 	return debounced;
