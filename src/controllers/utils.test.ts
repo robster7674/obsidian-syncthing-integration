@@ -116,12 +116,19 @@ describe("parseConflictFilename with Syncthing's naming rules", () => {
 		).toBe(".bashrc");
 	});
 
-	it("maps a conflict of a conflict to the first original", () => {
+	it("maps a conflict of a conflict to the first original and its own, newest marker", () => {
 		const parsed = parse(
-			"Note.sync-conflict-20210930-123456-ABCDEFG.sync-conflict-20211001-000000-BCDEFGH.md",
+			"Note.sync-conflict-20210930-123456-ABCDEFG.sync-conflict-20231001-000000-BCDEFGH.md",
 		);
 		expect(parsed.originalName).toBe("Note.md");
-		expect(parsed.date).toBe("20210930");
+		expect(parsed.date).toBe("20231001");
+		expect(parsed.modifiedBy).toBe("BCDEFGH");
+	});
+
+	it("accepts the older format without a device ID", () => {
+		const parsed = parse("Note.sync-conflict-20170101-120000.md");
+		expect(parsed.originalName).toBe("Note.md");
+		expect(parsed.modifiedBy).toBe("");
 	});
 
 	it("rejects names Syncthing does not produce", () => {
@@ -132,6 +139,9 @@ describe("parseConflictFilename with Syncthing's naming rules", () => {
 			"Note.sync-conflict-20210930-1234-ABCDEFG.md",
 			"Note-sync-conflict-20210930-123456-ABCDEFG.md",
 			"Note.sync-conflict-20219930-123456-ABCDEFG.md",
+			"Note.sync-conflict-20210231-000000-ABCDEFG.md",
+			"Note.sync-conflict-20210101-240000-ABCDEFG.md",
+			"Note.sync-conflict-20210101-126000-ABCDEFG.md",
 		]) {
 			expect(parseConflictFilename(name), name).toBeInstanceOf(Failure);
 		}

@@ -125,26 +125,30 @@ export class SyncthingController {
 	/**
 	 * Gets the Syncthing conflicting files for the ConflictsModal,
 	 * grouped by the path of their original file and sorted from most recent.
-	 * Files whose name cannot be parsed are skipped.
+	 * Files that contain `.sync-conflict-` but are not named the way Syncthing names conflicts are returned apart.
 	 * @see https://docs.syncthing.net/users/syncing.html#conflicting-changes
 	 */
-	async getConflicts(): Promise<Map<string, TFile[]>> {
-		const conflictsFilesMap = new Map<string, TFile[]>();
+	async getConflicts(): Promise<{
+		conflicts: Map<string, TFile[]>;
+		unrecognised: TFile[];
+	}> {
+		const conflicts = new Map<string, TFile[]>();
+		const unrecognised: TFile[] = [];
 		for (const file of this.plugin.app.vault.getFiles()) {
 			if (!file.name.contains(".sync-conflict-")) continue;
 			const originalPath = originalPathOf(file);
 			if (originalPath instanceof Failure) {
-				console.warn(originalPath.message);
+				unrecognised.push(file);
 				continue;
 			}
-			const conflicts = conflictsFilesMap.get(originalPath) ?? [];
-			conflicts.push(file);
-			conflictsFilesMap.set(originalPath, conflicts);
+			const group = conflicts.get(originalPath) ?? [];
+			group.push(file);
+			conflicts.set(originalPath, group);
 		}
-		for (const conflicts of conflictsFilesMap.values()) {
-			conflicts.sort((a, b) => sortByConflictDate(a, b));
+		for (const group of conflicts.values()) {
+			group.sort((a, b) => sortByConflictDate(a, b));
 		}
-		return conflictsFilesMap;
+		return { conflicts, unrecognised };
 	}
 
 	/**

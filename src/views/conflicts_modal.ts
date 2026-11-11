@@ -16,13 +16,15 @@ export class ConflictsModal extends Modal {
 
 	async onOpen() {
 		this.titleEl.style.textAlign = "center";
-		const conflictFiles = await this.syncthingController.getConflicts();
+		const { conflicts, unrecognised } =
+			await this.syncthingController.getConflicts();
 		this.components.push(
 			mount(ConflictsListComponent, {
 				target: this.contentEl,
 				props: {
 					parentModal: this,
-					conflicts: conflictFiles,
+					conflicts,
+					unrecognised,
 				},
 			})
 		);

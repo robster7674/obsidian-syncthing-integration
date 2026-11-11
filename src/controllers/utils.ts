@@ -77,11 +77,13 @@ export function sortByConflictDate(
 /**
  * Matches the names Syncthing gives conflict files, `name[:len(name)-len(ext)] + ".sync-conflict-20060102-150405-" + shortID + ext`
  * (see `conflictName` in Syncthing's `lib/model/folder_sendrecv.go`).
- * The short device ID is 7 base32 characters, or empty for an unknown device.
- * A conflict of a conflict repeats the marker; the original is the name before the first one.
+ * The short device ID is 7 base32 characters, or empty for an unknown device; older Syncthing versions wrote no `-shortID` at all.
+ * A conflict of a conflict repeats the marker: the original is the name before the first one, and the last one describes the file itself.
  */
 const SYNCTHING_CONFLICT_FILENAME_REGEX =
-	/^(.*?)\.sync-conflict-(\d{8})-(\d{6})-([A-Z2-7]{7})?(?:\.sync-conflict-\d{8}-\d{6}-(?:[A-Z2-7]{7})?)*(\.[^.]*)?$/;
+	/^(.*?)((?:\.sync-conflict-\d{8}-\d{6}(?:-(?:[A-Z2-7]{7})?)?)+)(\.[^.]*)?$/;
+const LAST_CONFLICT_MARKER_REGEX =
+	/\.sync-conflict-(\d{8})-(\d{6})(?:-([A-Z2-7]{7})?)?$/;
 
 /**
  * Parses a Syncthing conflict filename.
@@ -100,17 +102,14 @@ export function parseConflictFilename(
 	filename: string
 ): ConflictFilename | Failure {
 	const match = SYNCTHING_CONFLICT_FILENAME_REGEX.exec(filename);
-	if (!match) {
+	const marker = match && LAST_CONFLICT_MARKER_REGEX.exec(match[2]);
+	if (!match || !marker) {
 		return new Failure(`Error parsing conflict filename : ${filename}`);
 	}
-	const [, stem, date, time, modifiedBy = "", extension = ""] = match;
-	const dateTime = new Date(
-		`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T${time.slice(
-			0,
-			2
-		)}:${time.slice(2, 4)}:${time.slice(4, 6)}`
-	);
-	if (Number.isNaN(dateTime.getTime())) {
+	const [, stem, , extension = ""] = match;
+	const [, date, time, modifiedBy = ""] = marker;
+	const dateTime = parseLocalDateTime(date, time);
+	if (!dateTime) {
 		return new Failure(`Invalid conflict date in filename : ${filename}`);
 	}
 	return {
@@ -122,6 +121,34 @@ export function parseConflictFilename(
 		extension: extension.slice(1),
 		originalName: stem + extension,
 	};
+}
+
+/**
+ * Parses `YYYYMMDD` and `HHMMSS` as a local date, or returns `undefined` if they are not a valid calendar date and time.
+ * Validation uses UTC so that a time skipped by daylight saving here, but valid on the device that wrote it, is still accepted.
+ */
+function parseLocalDateTime(date: string, time: string): Date | undefined {
+	const [year, month, day, hours, minutes, seconds] = [
+		date.slice(0, 4),
+		date.slice(4, 6),
+		date.slice(6, 8),
+		time.slice(0, 2),
+		time.slice(2, 4),
+		time.slice(4, 6),
+	].map(Number);
+	const utc = new Date(
+		Date.UTC(year, month - 1, day, hours, minutes, seconds)
+	);
+	const valid =
+		utc.getUTCFullYear() === year &&
+		utc.getUTCMonth() === month - 1 &&
+		utc.getUTCDate() === day &&
+		utc.getUTCHours() === hours &&
+		utc.getUTCMinutes() === minutes &&
+		utc.getUTCSeconds() === seconds;
+	return valid
+		? new Date(year, month - 1, day, hours, minutes, seconds)
+		: undefined;
 }
 
 /**

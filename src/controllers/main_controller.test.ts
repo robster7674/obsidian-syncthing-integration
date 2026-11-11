@@ -69,7 +69,6 @@ const CONFIG = {
 beforeEach(() => {
 	vi.spyOn(console, "log").mockImplementation(() => {});
 	vi.spyOn(console, "error").mockImplementation(() => {});
-	vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -217,30 +216,33 @@ describe("SyncthingController.getConflicts", () => {
 	it("groups conflicts by original path, most recent first", async () => {
 		const { controller } = makeHarness(vault);
 
-		const result = await controller.getConflicts();
+		const { conflicts, unrecognised } = await controller.getConflicts();
 
-		expect([...result.keys()].sort()).toEqual(["b/My Note.md", "b/Note.md"]);
-		expect(result.get("b/Note.md")).toEqual([newerB, olderB]);
+		expect([...conflicts.keys()].sort()).toEqual([
+			"b/My Note.md",
+			"b/Note.md",
+		]);
+		expect(conflicts.get("b/Note.md")).toEqual([newerB, olderB]);
+		expect(unrecognised).toEqual([]);
 	});
 
-	it("returns an empty map when there is no conflict", async () => {
+	it("returns empty results when there is no conflict", async () => {
 		const { controller } = makeHarness([originalA]);
 
-		const result = await controller.getConflicts();
+		const { conflicts, unrecognised } = await controller.getConflicts();
 
-		expect(result.size).toBe(0);
+		expect(conflicts.size).toBe(0);
+		expect(unrecognised).toEqual([]);
 	});
 
-	it("skips files whose conflict name cannot be parsed", async () => {
-		const { controller } = makeHarness([
-			makeFile("bad.sync-conflict-x.md"),
-			olderB,
-		]);
+	it("returns files with unrecognised conflict names apart", async () => {
+		const bad = makeFile("bad.sync-conflict-x.md");
+		const { controller } = makeHarness([bad, olderB]);
 
-		const result = await controller.getConflicts();
+		const { conflicts, unrecognised } = await controller.getConflicts();
 
-		expect([...result.keys()]).toEqual(["b/Note.md"]);
-		expect(console.warn).toHaveBeenCalled();
+		expect([...conflicts.keys()]).toEqual(["b/Note.md"]);
+		expect(unrecognised).toEqual([bad]);
 	});
 });
 

@@ -1,31 +1,20 @@
 <script lang="ts">
 	import { type TFile } from "obsidian";
 	import { type SyncthingController } from "src/controllers/main_controller";
-	import { Failure } from "src/models/failures";
 	import { type ConflictsModal } from "src/views/conflicts_modal";
 	import { DiffModal } from "src/views/diff_modal";
 	import ConflictFileDetails from "./conflict_file_details.svelte";
-	import { originalPathOf } from "src/controllers/utils";
 
+	export let originalPath: string;
 	export let conflicts: TFile[];
 	export let syncthingController: SyncthingController;
 	export let parentModal: ConflictsModal;
-	let originalPath = originalPathOf(conflicts[0]);
-	if (originalPath instanceof Failure) {
-		console.error(originalPath);
-	}
 </script>
 
 <details>
 	<summary>
 		<p>
-			<span>
-				{#if originalPath instanceof Failure}
-					{originalPath.message}
-				{:else}
-					{originalPath}
-				{/if}
-			</span>
+			<span>{originalPath}</span>
 			<span>
 				({conflicts.length} conflict{conflicts.length > 1 ? "s" : ""})
 			</span>
