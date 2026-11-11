@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { unifiedMergeView } from "@codemirror/merge";
-	import { EditorState, type Transaction } from "@codemirror/state";
+	import { EditorState } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
 	import { Notice, type TFile } from "obsidian";
+	import { ConflictResolver } from "src/controllers/conflict_resolution";
 	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { type DiffModal } from "src/views/diff_modal";
 	import { MergeModal } from "src/views/merge_editor";
@@ -14,6 +15,9 @@
 	let unifiedMergeViewContainer: HTMLDivElement;
 	let editor: EditorView;
 	let currentConflict = parentModal.conflictingFiles[0];
+	/** Bumped whenever a file shown here changes, to refresh the previews. */
+	let revision = 0;
+	const resolver = new ConflictResolver(parentModal.app);
 
 	// Modal elements styling
 	parentModal.titleEl.setText("Difference view");
@@ -22,101 +26,101 @@
 	onMount(async () => {
 		editor = new EditorView({
 			parent: unifiedMergeViewContainer,
-			state: EditorState.create({
-				doc: await parentModal.app.vault.read(currentConflict),
-				extensions: [
-					basicSetup,
-					EditorView.editable.of(false),
-					EditorView.lineWrapping,
-					EditorView.darkTheme.of(true),
-					unifiedMergeView({
-						original: await parentModal.app.vault.read(
-							parentModal.originalFile
-						),
-						mergeControls: false,
-						gutter: true,
-						highlightChanges: true,
-						syntaxHighlightDeletions: true,
-					}),
-				],
-			}),
+			state: await diffState(),
 		});
 	});
 
-	async function acceptConflict() {
-		const noticeTime = 2000;
-		new Notice("Resolving conflict : Accepting left", noticeTime);
-		const filenamePath = parentModal.originalFile.path;
-		setTimeout(
-			() => new Notice(`Deleting ${filenamePath}...`, noticeTime),
-			500
-		);
-		await parentModal.app.vault.delete(parentModal.originalFile, true);
-		new Notice("Original file deleted", 2000);
-		setTimeout(() => {
-			new Notice(
-				`Renaming ${currentConflict.path} to ${filenamePath}...`,
-				noticeTime
-			);
-		}, 1000);
-		await parentModal.app.fileManager.renameFile(
-			currentConflict,
-			filenamePath
-		);
-		removeCurrentConflictFromList();
-		new Notice(`Conflict resolved : Accepted left`, noticeTime);
-		parentModal.originalFile = currentConflict;
-		closeIfNoMoreConflicts();
-		currentConflict = parentModal.conflictingFiles[0];
-	}
-
-	async function acceptOriginal() {
-		new Notice("Resolving conflict : Accepting original", 5000);
-		setTimeout(
-			() => new Notice(`Deleting ${currentConflict.path}...`, 5000),
-			1000
-		);
-		await parentModal.app.vault.delete(currentConflict);
-		new Notice("Conflict resolved", 5000);
-		removeCurrentConflictFromList(); // for reactivity
-		closeIfNoMoreConflicts();
-		currentConflict = parentModal.conflictingFiles[0];
-	}
-
-	function removeCurrentConflictFromList() {
-		parentModal.conflictingFiles.remove(currentConflict);
-		parentModal.conflictingFiles = parentModal.conflictingFiles;
-	}
-
-	function closeIfNoMoreConflicts() {
-		if (parentModal.conflictingFiles.length === 0) {
-			parentModal.close();
-		}
-	}
-
-	function openMergeEditor() {
-		new MergeModal(
-			parentModal.app,
-			parentModal.originalFile,
-			currentConflict
-		).open();
-	}
-
-	function updateEditorDoc(content: string): Transaction {
-		return editor.state.update({
-			changes: {
-				from: 0,
-				to: editor.state.doc.length,
-				insert: content,
-			},
+	async function diffState(): Promise<EditorState> {
+		return EditorState.create({
+			doc: await parentModal.app.vault.read(currentConflict),
+			extensions: [
+				basicSetup,
+				EditorView.editable.of(false),
+				EditorView.lineWrapping,
+				EditorView.darkTheme.of(true),
+				unifiedMergeView({
+					original: await parentModal.app.vault.read(
+						parentModal.originalFile
+					),
+					mergeControls: false,
+					gutter: true,
+					highlightChanges: true,
+					syntaxHighlightDeletions: true,
+				}),
+			],
 		});
 	}
 
-	async function onFileChange(event: CustomEvent<{ file: TFile }>) {
-		currentConflict = event.detail.file;
-		editor.dispatch(
-			updateEditorDoc(await parentModal.app.vault.read(currentConflict))
+	async function showConflict(file: TFile) {
+		currentConflict = file;
+		revision++;
+		editor?.setState(await diffState());
+	}
+
+	/**
+	 * Drops a resolved conflict from the list, then shows the next one or closes.
+	 */
+	async function resolved(conflict: TFile) {
+		parentModal.conflictingFiles.remove(conflict);
+		parentModal.conflictingFiles = parentModal.conflictingFiles;
+		if (parentModal.conflictingFiles.length === 0) {
+			parentModal.close();
+			return;
+		}
+		await showConflict(parentModal.conflictingFiles[0]);
+	}
+
+	async function resolve(
+		conflict: TFile,
+		action: () => Promise<void>,
+		done: string
+	) {
+		try {
+			await action();
+		} catch (error) {
+			console.error(error);
+			new Notice(`Could not resolve the conflict: ${error}`);
+			return;
+		}
+		new Notice(done);
+		await resolved(conflict);
+	}
+
+	async function acceptConflict() {
+		const original = parentModal.originalFile;
+		const conflict = currentConflict;
+		const originalPath = original.path;
+		await resolve(
+			conflict,
+			async () => {
+				await resolver.keepConflict(original, conflict);
+				parentModal.originalFile = conflict;
+			},
+			`Kept the conflicting version of ${originalPath}. The previous version is in the trash.`
 		);
+	}
+
+	async function acceptOriginal() {
+		const conflict = currentConflict;
+		await resolve(
+			conflict,
+			() => resolver.keepOriginal(conflict),
+			`Kept the original. ${conflict.path} is in the trash.`
+		);
+	}
+
+	function openMergeEditor() {
+		const conflict = currentConflict;
+		new MergeModal(
+			parentModal.app,
+			parentModal.originalFile,
+			conflict,
+			() => resolved(conflict)
+		).open();
+	}
+
+	async function onFileChange(event: CustomEvent<{ file: TFile }>) {
+		await showConflict(event.detail.file);
 	}
 </script>
 
@@ -146,18 +150,20 @@
 	<h2>{parentModal.originalFile.basename}</h2>
 	<FileDetails file={parentModal.originalFile} />
 	<div class="preview-container">
-		<h2>Original file preview</h2>
-		{#await parentModal.app.vault.cachedRead(parentModal.originalFile)}
-			<p>Loading preview...</p>
-		{:then content}
-			<div class="preview" use:markdownPreview={content}></div>
-		{/await}
-		<h2>Conflicting file preview</h2>
-		{#await parentModal.app.vault.cachedRead(currentConflict)}
-			<p>Loading preview...</p>
-		{:then content}
-			<div class="preview" use:markdownPreview={content}></div>
-		{/await}
+		{#key revision}
+			<h2>Original file preview</h2>
+			{#await parentModal.app.vault.cachedRead(parentModal.originalFile)}
+				<p>Loading preview...</p>
+			{:then content}
+				<div class="preview" use:markdownPreview={content}></div>
+			{/await}
+			<h2>Conflicting file preview</h2>
+			{#await parentModal.app.vault.cachedRead(currentConflict)}
+				<p>Loading preview...</p>
+			{:then content}
+				<div class="preview" use:markdownPreview={content}></div>
+			{/await}
+		{/key}
 	</div>
 </div>
 <div class="tools">

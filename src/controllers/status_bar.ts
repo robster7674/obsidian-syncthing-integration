@@ -1,8 +1,10 @@
 import { type App, Menu, Notice, type TFile } from "obsidian";
 import type SyncthingPlugin from "src/main";
 import { Failure } from "src/models/failures";
+import { ConflictResolver } from "./conflict_resolution";
 import {
 	isConflictFilename,
+	originalPathOf,
 	parseConflictFilename,
 	sortByConflictDate,
 } from "./utils";
@@ -40,21 +42,22 @@ export class SyncthingStatusBar {
 				const file = this.currentFile;
 				menu.addItem((item) => {
 					item.setTitle("Rename to original").onClick(async () => {
-						const conflict = parseConflictFilename(file.name);
-						if (conflict instanceof Failure) {
+						const originalPath = originalPathOf(file);
+						if (originalPath instanceof Failure) {
 							new Notice("Failed to parse conflict filename");
-							console.error(conflict.message);
+							console.error(originalPath.message);
 							return;
 						}
-						new Notice("Not implemented yet");
-						// if (await this.app.vault.adapter.exists(normalizePath(file.name))) {
-						// 	new Notice("File with original name already exists");
-						// 	await this.app.vault.delete(this.app.vault.getAbstractFileByPath(normalizePath(file.name)) as TFile, true);
-						// 	new Notice("Deleted original file");
-						// 	// return;
-						// }
-						// await this.app.vault.adapter.rename(normalizePath(`${conflict.filename}.${conflict.extension}`), normalizePath(file.name));
-						// new Notice("Renamed conflict to original");
+						try {
+							await new ConflictResolver(this.app).restoreAsOriginal(
+								file,
+								originalPath
+							);
+							new Notice(`Renamed to ${originalPath}`);
+						} catch (error) {
+							console.error(error);
+							new Notice(`Could not rename to ${originalPath}: ${error}`);
+						}
 					})
 					item.setIcon("pencil");
 				})
