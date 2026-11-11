@@ -6,7 +6,12 @@ import type { SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import type { SyncthingFromREST } from "src/data/syncthing_remote_datasource";
 import type SyncthingPlugin from "src/main";
 import type { SyncthingConfiguration } from "src/models/entities";
-import { CliFailure, Failure, RestFailure } from "src/models/failures";
+import {
+	CliFailure,
+	Failure,
+	MissingOriginalFailure,
+	RestFailure,
+} from "src/models/failures";
 import { makeConflictFile, makeFile } from "../../test/helpers/files";
 import {
 	asPlugin,
@@ -280,10 +285,10 @@ describe("SyncthingController.getDiffFiles", () => {
 
 		const result = await controller.getDiffFiles(olderB);
 
-		expect(result.conflictingFiles).toBeInstanceOf(Failure);
-		expect((result.conflictingFiles as Failure).message).toContain(
-			"b/Note.md",
-		);
+		expect(result.conflictingFiles).toBeInstanceOf(MissingOriginalFailure);
+		expect(
+			(result.conflictingFiles as MissingOriginalFailure).originalPath,
+		).toBe("b/Note.md");
 	});
 });
 

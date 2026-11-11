@@ -9,7 +9,9 @@ export class MergeModal extends Modal {
 	constructor(
 		app: App,
 		public originalFile: TFile,
-		public modifiedFile: TFile
+		public modifiedFile: TFile,
+		/** Called once the merge has been saved and the conflict file trashed. */
+		public onResolved: () => void = () => {}
 	) {
 		super(app);
 	}
