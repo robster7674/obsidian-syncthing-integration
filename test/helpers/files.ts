@@ -41,6 +41,8 @@ export function makeFile(path: string, options: MakeFileOptions = {}): TFile {
 }
 
 export interface ConflictParts {
+	/** Folder of the conflict, without a trailing slash. Defaults to the vault root. */
+	folder?: string;
 	filename?: string;
 	date?: string;
 	time?: string;
@@ -49,18 +51,20 @@ export interface ConflictParts {
 }
 
 /**
- * Build a Syncthing conflict filename following the documented format:
- * `{filename}.sync-conflict-{date}-{time}-{modifiedBy}.{extension}`.
+ * Build a Syncthing conflict path following the documented format:
+ * `{folder}/{filename}.sync-conflict-{date}-{time}-{modifiedBy}.{extension}`.
  */
 export function conflictName(parts: ConflictParts = {}): string {
 	const {
+		folder,
 		filename = "Note",
 		date = "20210930",
 		time = "123456",
 		modifiedBy = "ABCDEFG",
 		extension = "md",
 	} = parts;
-	return `${filename}.sync-conflict-${date}-${time}-${modifiedBy}.${extension}`;
+	const name = `${filename}.sync-conflict-${date}-${time}-${modifiedBy}${extension ? `.${extension}` : ""}`;
+	return folder ? `${folder}/${name}` : name;
 }
 
 /**
