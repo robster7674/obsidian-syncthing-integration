@@ -13,10 +13,13 @@
 
 	export let parentModal: DiffModal;
 	let unifiedMergeViewContainer: HTMLDivElement;
-	let editor: EditorView;
+	let editor: EditorView | undefined;
 	let currentConflict = parentModal.conflictingFiles[0];
 	/** Bumped whenever a file shown here changes, to refresh the previews. */
 	let revision = 0;
+	/** Identifies the latest diff request, so an older one finishing late is ignored. */
+	let diffRequest = 0;
+	let busy = false;
 	const resolver = new ConflictResolver(parentModal.app);
 
 	// Modal elements styling
@@ -24,24 +27,24 @@
 	parentModal.titleEl.style.textAlign = "center";
 
 	onMount(async () => {
-		editor = new EditorView({
-			parent: unifiedMergeViewContainer,
-			state: await diffState(),
-		});
+		editor = new EditorView({ parent: unifiedMergeViewContainer });
+		await showConflict(currentConflict);
 	});
 
-	async function diffState(): Promise<EditorState> {
+	async function diffState(conflict: TFile): Promise<EditorState> {
+		const [conflictContent, originalContent] = await Promise.all([
+			parentModal.app.vault.read(conflict),
+			parentModal.app.vault.read(parentModal.originalFile),
+		]);
 		return EditorState.create({
-			doc: await parentModal.app.vault.read(currentConflict),
+			doc: conflictContent,
 			extensions: [
 				basicSetup,
 				EditorView.editable.of(false),
 				EditorView.lineWrapping,
 				EditorView.darkTheme.of(true),
 				unifiedMergeView({
-					original: await parentModal.app.vault.read(
-						parentModal.originalFile
-					),
+					original: originalContent,
 					mergeControls: false,
 					gutter: true,
 					highlightChanges: true,
@@ -54,7 +57,9 @@
 	async function showConflict(file: TFile) {
 		currentConflict = file;
 		revision++;
-		editor?.setState(await diffState());
+		const request = ++diffRequest;
+		const state = await diffState(file);
+		if (request === diffRequest) editor?.setState(state);
 	}
 
 	/**
@@ -75,12 +80,16 @@
 		action: () => Promise<void>,
 		done: string
 	) {
+		if (busy) return;
+		busy = true;
 		try {
 			await action();
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not resolve the conflict: ${error}`);
 			return;
+		} finally {
+			busy = false;
 		}
 		new Notice(done);
 		await resolved(conflict);
@@ -89,14 +98,10 @@
 	async function acceptConflict() {
 		const original = parentModal.originalFile;
 		const conflict = currentConflict;
-		const originalPath = original.path;
 		await resolve(
 			conflict,
-			async () => {
-				await resolver.keepConflict(original, conflict);
-				parentModal.originalFile = conflict;
-			},
-			`Kept the conflicting version of ${originalPath}. The previous version is in the trash.`
+			() => resolver.keepConflict(original, conflict),
+			`Kept the conflicting version of ${original.path}. The previous version is in the trash.`
 		);
 	}
 
@@ -110,6 +115,7 @@
 	}
 
 	function openMergeEditor() {
+		if (busy) return;
 		const conflict = currentConflict;
 		new MergeModal(
 			parentModal.app,
@@ -148,7 +154,9 @@
 <div class="column">
 	<h1>Original file</h1>
 	<h2>{parentModal.originalFile.basename}</h2>
-	<FileDetails file={parentModal.originalFile} />
+	{#key revision}
+		<FileDetails file={parentModal.originalFile} />
+	{/key}
 	<div class="preview-container">
 		{#key revision}
 			<h2>Original file preview</h2>
@@ -167,9 +175,13 @@
 	</div>
 </div>
 <div class="tools">
-	<button on:click={acceptConflict}> Accept conflict changes </button>
-	<button on:click={acceptOriginal}> Accept original </button>
-	<button on:click={openMergeEditor}> Open in Merge Editor </button>
+	<button disabled={busy} on:click={acceptConflict}>
+		Accept conflict changes
+	</button>
+	<button disabled={busy} on:click={acceptOriginal}> Accept original </button>
+	<button disabled={busy} on:click={openMergeEditor}>
+		Open in Merge Editor
+	</button>
 </div>
 
 <style>

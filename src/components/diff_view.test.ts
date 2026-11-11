@@ -87,7 +87,7 @@ describe("diff_view.svelte", () => {
 		expect(modal.close).not.toHaveBeenCalled();
 	});
 
-	it("keeps the conflict by trashing the original and closes when none are left", async () => {
+	it("keeps the conflict's content, trashing the old version, and closes when none are left", async () => {
 		const { memory, modal, view, button } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer" },
 			[NEWER],
@@ -99,8 +99,28 @@ describe("diff_view.svelte", () => {
 		await waitFor(() => expect(modal.close).toHaveBeenCalled());
 		expect(memory.content(ORIGINAL)).toBe("newer");
 		expect(memory.content(NEWER)).toBeUndefined();
-		expect(memory.trashed).toEqual([{ path: ORIGINAL, content: "local" }]);
+		expect(memory.trashed.map((entry) => entry.content)).toEqual([
+			"local",
+			"newer",
+		]);
 		expect(memory.app.vault.delete).not.toHaveBeenCalled();
+	});
+
+	it("ignores a second click while a resolution is running", async () => {
+		const { memory, view, button } = setup(
+			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },
+			[NEWER, OLDER],
+		);
+		await view.findAllByText(/newer/);
+
+		await Promise.all([
+			fireEvent.click(button("Accept original")),
+			fireEvent.click(button("Accept original")),
+		]);
+
+		await waitFor(() => expect(memory.trashed).toHaveLength(1));
+		expect(memory.app.vault.trash).toHaveBeenCalledTimes(1);
+		expect(memory.content(OLDER)).toBe("older");
 	});
 
 	it("keeps both files and the conflict listed when resolving fails", async () => {
@@ -108,7 +128,7 @@ describe("diff_view.svelte", () => {
 			{ [ORIGINAL]: "local", [NEWER]: "newer" },
 			[NEWER],
 		);
-		memory.app.vault.trash = async () => {
+		memory.app.vault.adapter.trashSystem = async () => {
 			throw new Error("trash unavailable");
 		};
 		vi.spyOn(console, "error").mockImplementation(() => {});

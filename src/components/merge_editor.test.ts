@@ -129,6 +129,17 @@ describe("merge_editor.svelte", () => {
 		]);
 	});
 
+	it("ignores a second save while one is running", async () => {
+		const { memory, modal } = vaultModal("same", "same");
+		const { save } = renderEditor("same", "same", modal);
+
+		await Promise.all([fireEvent.click(save), fireEvent.click(save)]);
+
+		await waitFor(() => expect(modal.onResolved).toHaveBeenCalledTimes(1));
+		expect(memory.app.vault.trash).toHaveBeenCalledTimes(1);
+		expect(memory.trashed).toHaveLength(1);
+	});
+
 	it("keeps both files and the editor open when saving fails", async () => {
 		const { memory, modal } = vaultModal("same", "same");
 		memory.app.vault.trash = async () => {
@@ -136,6 +147,7 @@ describe("merge_editor.svelte", () => {
 		};
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		const { save } = renderEditor("same", "same", modal);
+		expect(memory.content(ORIGINAL)).toBe("same");
 
 		await fireEvent.click(save);
 

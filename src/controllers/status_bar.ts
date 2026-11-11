@@ -54,6 +54,8 @@ export class SyncthingStatusBar {
 								originalPath
 							);
 							new Notice(`Renamed to ${originalPath}`);
+							this.currentFile = file;
+							this.createStatusBar();
 						} catch (error) {
 							console.error(error);
 							new Notice(`Could not rename to ${originalPath}: ${error}`);

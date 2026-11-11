@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeMemoryVault } from "../../test/helpers/vault";
 import { ConflictResolver } from "./conflict_resolution";
 
@@ -27,23 +27,29 @@ describe("ConflictResolver.keepOriginal", () => {
 	});
 });
 
+const BACKUP = /^\.obsidian\/Note\.before-merge-\d{8}T\d{9}Z\.md$/;
+
 describe("ConflictResolver.keepConflict", () => {
-	it("trashes the original, then gives the conflict its path", async () => {
+	it("puts the conflict's content in the original and both old versions in the trash", async () => {
 		const { memory, resolver } = setup();
-		const conflict = memory.file(CONFLICT);
+		const original = memory.file(ORIGINAL);
 
-		await resolver.keepConflict(memory.file(ORIGINAL), conflict);
+		await resolver.keepConflict(original, memory.file(CONFLICT));
 
+		expect(memory.file(ORIGINAL)).toBe(original);
 		expect(memory.content(ORIGINAL)).toBe("remote");
 		expect(memory.content(CONFLICT)).toBeUndefined();
-		expect(conflict.path).toBe(ORIGINAL);
-		expect(memory.trashed).toEqual([{ path: ORIGINAL, content: "local" }]);
+		expect(memory.trashed).toEqual([
+			{ path: expect.stringMatching(BACKUP), content: "local" },
+			{ path: CONFLICT, content: "remote" },
+		]);
+		expect(memory.hidden.size).toBe(0);
 		expect(memory.content("a/Note.md")).toBe("other folder");
 	});
 
-	it("leaves both files in place when trashing the original fails", async () => {
+	it("leaves both files untouched when the backup cannot be trashed", async () => {
 		const { memory, resolver } = setup();
-		memory.app.vault.trash = async () => {
+		memory.app.vault.adapter.trashSystem = async () => {
 			throw new Error("trash unavailable");
 		};
 
@@ -53,12 +59,25 @@ describe("ConflictResolver.keepConflict", () => {
 
 		expect(memory.content(ORIGINAL)).toBe("local");
 		expect(memory.content(CONFLICT)).toBe("remote");
-		expect(memory.app.fileManager.renameFile).not.toHaveBeenCalled();
+		expect(memory.hidden.size).toBe(0);
+		expect(memory.app.vault.modify).not.toHaveBeenCalled();
+	});
+
+	it("falls back to Obsidian's trash folder when the system trash is off", async () => {
+		const { memory, resolver } = setup();
+		memory.app.vault.adapter.trashSystem = vi.fn(async () => false);
+
+		await resolver.keepConflict(memory.file(ORIGINAL), memory.file(CONFLICT));
+
+		expect(memory.app.vault.adapter.trashLocal).toHaveBeenCalledWith(
+			expect.stringMatching(BACKUP),
+		);
+		expect(memory.content(ORIGINAL)).toBe("remote");
 	});
 });
 
 describe("ConflictResolver.saveMerge", () => {
-	it("trashes a copy of the previous content, writes the merge, then trashes the conflict", async () => {
+	it("trashes the previous content, writes the merge, then trashes the conflict", async () => {
 		const { memory, resolver } = setup();
 
 		await resolver.saveMerge(
@@ -70,14 +89,10 @@ describe("ConflictResolver.saveMerge", () => {
 		expect(memory.content(ORIGINAL)).toBe("merged");
 		expect(memory.content(CONFLICT)).toBeUndefined();
 		expect(memory.trashed).toEqual([
-			{
-				path: expect.stringMatching(
-					/^b\/Note\.before-merge-\d{8}T\d{9}Z\.md$/,
-				),
-				content: "local",
-			},
+			{ path: expect.stringMatching(BACKUP), content: "local" },
 			{ path: CONFLICT, content: "remote" },
 		]);
+		expect(memory.app.vault.create).not.toHaveBeenCalled();
 	});
 
 	it("does not back up an original that the merge leaves unchanged", async () => {
@@ -109,6 +124,36 @@ describe("ConflictResolver.saveMerge", () => {
 
 		expect(memory.content(ORIGINAL)).toBe("local");
 		expect(memory.content(CONFLICT)).toBe("remote");
+	});
+
+	it("says the merge was saved when only trashing the conflict fails, and can be retried", async () => {
+		const { memory, resolver } = setup();
+		const trash = memory.app.vault.trash;
+		memory.app.vault.trash = async () => {
+			throw new Error("trash unavailable");
+		};
+
+		await expect(
+			resolver.saveMerge(
+				memory.file(ORIGINAL),
+				memory.file(CONFLICT),
+				"merged",
+			),
+		).rejects.toThrow(`Saved ${ORIGINAL}, but could not move ${CONFLICT}`);
+		expect(memory.content(ORIGINAL)).toBe("merged");
+
+		memory.app.vault.trash = trash;
+		await resolver.saveMerge(
+			memory.file(ORIGINAL),
+			memory.file(CONFLICT),
+			"merged",
+		);
+
+		expect(memory.content(CONFLICT)).toBeUndefined();
+		expect(memory.trashed.map((entry) => entry.content)).toEqual([
+			"local",
+			"remote",
+		]);
 	});
 });
 

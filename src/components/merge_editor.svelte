@@ -23,7 +23,11 @@
 	const resolver = new ConflictResolver(parentModal.app);
 	onDestroy(() => updatePreview.cancel());
 
+	let saving = false;
+
 	async function save() {
+		if (saving) return;
+		saving = true;
 		const merged = mergeEditor.a.state.doc.toString();
 		try {
 			await resolver.saveMerge(
@@ -35,6 +39,8 @@
 			console.error(error);
 			new Notice(`Could not save the merge: ${error}`);
 			return;
+		} finally {
+			saving = false;
 		}
 		new Notice(
 			`Saved ${parentModal.originalFile.path}. The conflict and the previous version are in the trash.`

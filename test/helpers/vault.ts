@@ -9,7 +9,10 @@ import { makeFile } from "./files";
 export interface MemoryVault {
 	app: App;
 	files: Map<string, { file: TFile; content: string }>;
+	/** Everything moved to the trash, through the vault or the adapter. */
 	trashed: { path: string; content: string }[];
+	/** Files written through the adapter, outside the vault index. */
+	hidden: Map<string, string>;
 	file(path: string): TFile;
 	content(path: string): string | undefined;
 }
@@ -17,6 +20,13 @@ export interface MemoryVault {
 export function makeMemoryVault(contents: Record<string, string>): MemoryVault {
 	const files = new Map<string, { file: TFile; content: string }>();
 	const trashed: { path: string; content: string }[] = [];
+	const hidden = new Map<string, string>();
+	const hiddenEntry = (path: string) => {
+		const content = hidden.get(path);
+		if (content === undefined) throw new Error(`${path} does not exist`);
+		hidden.delete(path);
+		return content;
+	};
 	const add = (path: string, content: string): TFile => {
 		const file = makeFile(path);
 		files.set(path, { file, content });
@@ -54,6 +64,22 @@ export function makeMemoryVault(contents: Record<string, string>): MemoryVault {
 		delete: vi.fn(async () => {
 			throw new Error("Permanent deletion is not allowed");
 		}),
+		configDir: ".obsidian",
+		adapter: {
+			write: vi.fn(async (path: string, content: string) => {
+				hidden.set(path, content);
+			}),
+			trashSystem: vi.fn(async (path: string) => {
+				trashed.push({ path, content: hiddenEntry(path) });
+				return true;
+			}),
+			trashLocal: vi.fn(async (path: string) => {
+				trashed.push({ path, content: hiddenEntry(path) });
+			}),
+			remove: vi.fn(async (path: string) => {
+				hiddenEntry(path);
+			}),
+		},
 	};
 	const fileManager = {
 		renameFile: vi.fn(async (file: TFile, newPath: string) => {
@@ -75,6 +101,7 @@ export function makeMemoryVault(contents: Record<string, string>): MemoryVault {
 		app: { vault, fileManager } as unknown as App,
 		files,
 		trashed,
+		hidden,
 		file: (path) => {
 			const found = files.get(path);
 			if (!found) throw new Error(`${path} does not exist`);
