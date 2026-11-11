@@ -10,6 +10,7 @@ import {
 	isNumberArray,
 	isStringArray,
 	logErrorIfNotValidJson,
+	originalPathOf,
 	parseConflictFilename,
 	sortByConflictDate,
 	sortFilesBy,
@@ -81,6 +82,78 @@ describe("parseConflictFilename", () => {
 		expect(parsed).toBeInstanceOf(Failure);
 		if (!(parsed instanceof Failure)) return;
 		expect(parsed.message).toContain("Note.md");
+	});
+});
+
+describe("parseConflictFilename with Syncthing's naming rules", () => {
+	function parse(name: string) {
+		const parsed = parseConflictFilename(name);
+		if (parsed instanceof Failure) throw new Error(parsed.message);
+		return parsed;
+	}
+
+	it("handles files without an extension", () => {
+		const parsed = parse("Makefile.sync-conflict-20210930-123456-ABCDEFG");
+		expect(parsed.originalName).toBe("Makefile");
+		expect(parsed.extension).toBe("");
+		expect(parsed.modifiedBy).toBe("ABCDEFG");
+	});
+
+	it("handles an unknown device, written as an empty short ID", () => {
+		const parsed = parse("Note.sync-conflict-20210930-123456-.md");
+		expect(parsed.modifiedBy).toBe("");
+		expect(parsed.originalName).toBe("Note.md");
+	});
+
+	it("keeps only the last extension, like Go's filepath.Ext", () => {
+		expect(
+			parse("archive.tar.sync-conflict-20210930-123456-ABCDEFG.gz")
+				.originalName,
+		).toBe("archive.tar.gz");
+		expect(
+			parse(".sync-conflict-20210930-123456-ABCDEFG.bashrc")
+				.originalName,
+		).toBe(".bashrc");
+	});
+
+	it("maps a conflict of a conflict to the first original", () => {
+		const parsed = parse(
+			"Note.sync-conflict-20210930-123456-ABCDEFG.sync-conflict-20211001-000000-BCDEFGH.md",
+		);
+		expect(parsed.originalName).toBe("Note.md");
+		expect(parsed.date).toBe("20210930");
+	});
+
+	it("rejects names Syncthing does not produce", () => {
+		for (const name of [
+			"Note.sync-conflict-20210930-123456-abcdefg.md",
+			"Note.sync-conflict-20210930-123456-ABCDEF1.md",
+			"Note.sync-conflict-20210930-123456-ABCDEFGH.md",
+			"Note.sync-conflict-20210930-1234-ABCDEFG.md",
+			"Note-sync-conflict-20210930-123456-ABCDEFG.md",
+			"Note.sync-conflict-20219930-123456-ABCDEFG.md",
+		]) {
+			expect(parseConflictFilename(name), name).toBeInstanceOf(Failure);
+		}
+	});
+});
+
+describe("originalPathOf", () => {
+	it("returns the original path in the same folder", () => {
+		expect(
+			originalPathOf(
+				makeFile("a/b/Note.sync-conflict-20210930-123456-ABCDEFG.md"),
+			),
+		).toBe("a/b/Note.md");
+		expect(
+			originalPathOf(
+				makeFile("Note.sync-conflict-20210930-123456-ABCDEFG.md"),
+			),
+		).toBe("Note.md");
+	});
+
+	it("returns a Failure for a file that is not a conflict", () => {
+		expect(originalPathOf(makeFile("a/Note.md"))).toBeInstanceOf(Failure);
 	});
 });
 

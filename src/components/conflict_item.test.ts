@@ -53,6 +53,18 @@ describe("conflict_item.svelte", () => {
 		expect(container.textContent).toContain("View conflicts");
 	});
 
+	it("shows the original path, so same-named notes stay apart", () => {
+		const { container } = render(ConflictItem, {
+			props: {
+				conflicts: [makeConflictFile({ folder: "b", filename: "Note" })],
+				syncthingController: controller,
+				parentModal,
+			},
+		});
+
+		expect(container.textContent).toContain("b/Note.md");
+	});
+
 	it("uses the singular form for a single conflict", () => {
 		const { container } = render(ConflictItem, {
 			props: {

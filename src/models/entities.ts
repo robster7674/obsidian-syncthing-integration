@@ -133,14 +133,20 @@ export interface ConflictFilename {
 	 * format: reduced device ID (7 characters)
 	 * @example `ABCDEF1`
 	 */
-	modifiedBy: string; // format: reduced device ID (7 characters)
+	modifiedBy: string; // format: reduced device ID (7 characters), empty if unknown
 	/**
-	 * The file extension of the file that is in conflict.
+	 * The file extension of the file that is in conflict, without the dot. Empty if it has none.
 	 *
 	 * format: file extension
 	 * @example `md`
 	 */
 	extension: string;
+	/**
+	 * The name of the original file, that is the conflict name without its `.sync-conflict-…` part.
+	 *
+	 * @example `MyFile.md`
+	 */
+	originalName: string;
 }
 
 // TODO: add all entities necessary from Syncthing API (REST/CLI) to the integration in Obsidian.

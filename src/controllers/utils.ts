@@ -59,8 +59,8 @@ export function sortByConflictDate(
 	b: TFile | TFile[]
 ): number {
 	if (a instanceof TFile && b instanceof TFile) {
-		const filepropsA = parseConflictFilename(a.basename);
-		const filepropsB = parseConflictFilename(b.basename);
+		const filepropsA = parseConflictFilename(a.name);
+		const filepropsB = parseConflictFilename(b.name);
 		const dateA =
 			filepropsA instanceof Failure ? new Date() : filepropsA.dateTime;
 		const dateB =
@@ -74,56 +74,77 @@ export function sortByConflictDate(
 }
 
 
-const SYNCTHING_CONFLICT_FILENAME_REGEX = /(.*).sync-conflict-(\d{8})-(\d{6})-(\w+).(\w+)/;
+/**
+ * Matches the names Syncthing gives conflict files, `name[:len(name)-len(ext)] + ".sync-conflict-20060102-150405-" + shortID + ext`
+ * (see `conflictName` in Syncthing's `lib/model/folder_sendrecv.go`).
+ * The short device ID is 7 base32 characters, or empty for an unknown device.
+ * A conflict of a conflict repeats the marker; the original is the name before the first one.
+ */
+const SYNCTHING_CONFLICT_FILENAME_REGEX =
+	/^(.*?)\.sync-conflict-(\d{8})-(\d{6})-([A-Z2-7]{7})?(?:\.sync-conflict-\d{8}-\d{6}-(?:[A-Z2-7]{7})?)*(\.[^.]*)?$/;
 
 /**
  * Parses a Syncthing conflict filename.
- * The filename format is as follow : `{filename}.sync-conflict-{date}-{time}-{modifiedBy}.{extension}`
+ * The filename format is as follow : `{filename}.sync-conflict-{date}-{time}-{modifiedBy}{.extension}`
  * The format of each part is as follow :
- * - `{filename}` : the filename of the file that is in conflict.
+ * - `{filename}` : the original filename without its extension.
  * - `{date}` : the date of the conflict, in the format `YYYYMMDD`.
  * - `{time}` : the time of the conflict, in the format `HHMMSS`.
  * - `{modifiedBy}` : the device ID of the device that modified the file. it is a reduced version of {@linkcode SyncthingDevice.deviceID}
- * - `{extension}` : the file extension of the file that is in conflict.
- * @param filename the filename to parse.
+ * - `{.extension}` : the original file extension, if any.
+ * @param filename the file name (not the basename) to parse.
  * @see https://docs.syncthing.net/users/syncing.html#conflicting-changes for the filename format.
  * @returns a {@linkcode ConflictFilename} object if the filename is valid, or a {@linkcode Failure} object if it is not.
  */
 export function parseConflictFilename(
 	filename: string
 ): ConflictFilename | Failure {
-	const regex = new RegExp(SYNCTHING_CONFLICT_FILENAME_REGEX);
-	const match = regex.exec(filename);
+	const match = SYNCTHING_CONFLICT_FILENAME_REGEX.exec(filename);
 	if (!match) {
 		return new Failure(`Error parsing conflict filename : ${filename}`);
 	}
+	const [, stem, date, time, modifiedBy = "", extension = ""] = match;
+	const dateTime = new Date(
+		`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T${time.slice(
+			0,
+			2
+		)}:${time.slice(2, 4)}:${time.slice(4, 6)}`
+	);
+	if (Number.isNaN(dateTime.getTime())) {
+		return new Failure(`Invalid conflict date in filename : ${filename}`);
+	}
 	return {
-		filename: match[1],
-		date: match[2],
-		time: match[3],
-		dateTime: new Date(
-			`${match[2].slice(0, 4)}-${match[2].slice(4, 6)}-${match[2].slice(
-				6,
-				8
-			)}T${match[3].slice(0, 2)}:${match[3].slice(2, 4)}:${match[3].slice(
-				4,
-				6
-			)}`
-		),
-		modifiedBy: match[4],
-		extension: match[5],
+		filename: stem,
+		date,
+		time,
+		dateTime,
+		modifiedBy,
+		extension: extension.slice(1),
+		originalName: stem + extension,
 	};
 }
 
 /**
- * Check if the given filename is in the format of a Syncthing conflict like `{filename}.sync-conflict-{date}-{time}-{modifiedBy}.{extension}`.
+ * Check if the given filename is in the format of a Syncthing conflict like `{filename}.sync-conflict-{date}-{time}-{modifiedBy}{.extension}`.
  *
- * @param filename The filename to check.
+ * @param filename The file name (not the basename) to check.
  */
 export function isConflictFilename(filename: string): boolean {
-	const regex = new RegExp(SYNCTHING_CONFLICT_FILENAME_REGEX);
-	const match = regex.exec(filename);
-	return !!match;
+	return SYNCTHING_CONFLICT_FILENAME_REGEX.test(filename);
+}
+
+/**
+ * Gets the vault path of the file that a Syncthing conflict file belongs to.
+ * Syncthing writes a conflict next to its original, so this is the same folder with the original name.
+ *
+ * @param file the conflict file.
+ * @returns the original path, or a {@linkcode Failure} if `file` is not a conflict file.
+ */
+export function originalPathOf(file: TFile): string | Failure {
+	const properties = parseConflictFilename(file.name);
+	if (properties instanceof Failure) return properties;
+	const folder = file.path.slice(0, file.path.length - file.name.length);
+	return folder + properties.originalName;
 }
 
 /**

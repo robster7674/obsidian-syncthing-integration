@@ -1,7 +1,11 @@
 import { type App, Menu, Notice, type TFile } from "obsidian";
 import type SyncthingPlugin from "src/main";
 import { Failure } from "src/models/failures";
-import { isConflictFilename, parseConflictFilename } from "./utils";
+import {
+	isConflictFilename,
+	parseConflictFilename,
+	sortByConflictDate,
+} from "./utils";
 
 export class SyncthingStatusBar {
 	app: App;
@@ -64,24 +68,11 @@ export class SyncthingStatusBar {
 				});
 			}
 			menu.addSeparator();
-			this.activeConflicts?.sort((a, b) => {
-				const aProps = parseConflictFilename(a.basename);
-				const bProps = parseConflictFilename(b.basename);
-				if (aProps instanceof Failure || bProps instanceof Failure) {
-					return 0;
-				}
-				if (aProps.dateTime > bProps.dateTime) {
-					return -1;
-				}
-				if (aProps.dateTime < bProps.dateTime) {
-					return 1;
-				}
-				return 0;
-			})
+			this.activeConflicts?.sort((a, b) => sortByConflictDate(a, b));
 			this.activeConflicts?.forEach((file) => {
 				menu.addItem((item) => {
-					if (isConflictFilename(file.basename)) {
-						const conflict = parseConflictFilename(file.basename);
+					if (isConflictFilename(file.name)) {
+						const conflict = parseConflictFilename(file.name);
 						if (conflict instanceof Failure) {
 							return;
 						}

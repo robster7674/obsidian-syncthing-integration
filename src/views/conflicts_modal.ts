@@ -1,8 +1,6 @@
 import { type App, Modal } from "obsidian";
-import { Failure } from "src/models/failures";
 import { mount, unmount } from "svelte";
 import ConflictsListComponent from "../components/conflicts_list.svelte";
-import FailureComponent from "../components/error.svelte";
 import { type SyncthingController } from "../controllers/main_controller";
 
 /**
@@ -19,18 +17,6 @@ export class ConflictsModal extends Modal {
 	async onOpen() {
 		this.titleEl.style.textAlign = "center";
 		const conflictFiles = await this.syncthingController.getConflicts();
-		if (conflictFiles instanceof Failure) {
-			this.components.push(
-				mount(FailureComponent, {
-					target: this.contentEl,
-					props: {
-						failure: conflictFiles,
-					},
-				})
-			);
-			return;
-		}
-
 		this.components.push(
 			mount(ConflictsListComponent, {
 				target: this.contentEl,

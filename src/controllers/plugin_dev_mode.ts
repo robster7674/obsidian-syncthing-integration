@@ -49,10 +49,10 @@ export class PluginDevModeController {
 					.replace(/-/gm, "")
 					.replace("T", "-")
 					.replace(/:|\.\d{3}Z/gm, "");
-				const deviceID = Math.random()
-					.toString(36)
-					.substring(2, 9)
-					.toUpperCase();
+				const deviceID = Array.from(
+					{ length: 7 },
+					() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]
+				).join("");
 				console.log(dateString);
 				await this.plugin.app.vault.create(
 					`${mainFile.basename}.sync-conflict-${dateString}-${deviceID}.md`,

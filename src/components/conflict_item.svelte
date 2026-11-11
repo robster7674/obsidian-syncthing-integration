@@ -5,14 +5,14 @@
 	import { type ConflictsModal } from "src/views/conflicts_modal";
 	import { DiffModal } from "src/views/diff_modal";
 	import ConflictFileDetails from "./conflict_file_details.svelte";
-	import { parseConflictFilename } from "src/controllers/utils";
+	import { originalPathOf } from "src/controllers/utils";
 
 	export let conflicts: TFile[];
 	export let syncthingController: SyncthingController;
 	export let parentModal: ConflictsModal;
-	let filenameProps = parseConflictFilename(conflicts[0].name);
-	if (filenameProps instanceof Failure) {
-		console.error(filenameProps);
+	let originalPath = originalPathOf(conflicts[0]);
+	if (originalPath instanceof Failure) {
+		console.error(originalPath);
 	}
 </script>
 
@@ -20,10 +20,10 @@
 	<summary>
 		<p>
 			<span>
-				{#if filenameProps instanceof Failure}
-					{filenameProps.message}
+				{#if originalPath instanceof Failure}
+					{originalPath.message}
 				{:else}
-					{filenameProps.filename}
+					{originalPath}
 				{/if}
 			</span>
 			<span>
