@@ -142,6 +142,27 @@ describe("diff_view.svelte", () => {
 		);
 	});
 
+	it("shows the files as they are after a partial failure", async () => {
+		const { memory, button, ready, view } = setup(
+			{ [ORIGINAL]: "local", [NEWER]: "newer" },
+			[NEWER],
+		);
+		memory.app.vault.trash = async () => {
+			throw new Error("trash unavailable");
+		};
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		await ready();
+
+		await fireEvent.click(button("Accept conflict"));
+
+		await waitFor(() =>
+			expect(
+				view.container.querySelectorAll(".preview")[0]?.textContent,
+			).toContain("newer"),
+		);
+		expect(memory.content(ORIGINAL)).toBe("newer");
+	});
+
 	it("ignores a second click while a resolution is running", async () => {
 		const { memory, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },

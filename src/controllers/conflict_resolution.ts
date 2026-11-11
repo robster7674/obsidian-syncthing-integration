@@ -31,6 +31,7 @@ export class ConflictResolver {
 			original,
 			conflict,
 			await this.app.vault.readBinary(conflict),
+			"before-accepting-conflict",
 			expectedOriginal
 		);
 	}
@@ -50,6 +51,7 @@ export class ConflictResolver {
 			original,
 			conflict,
 			new TextEncoder().encode(merged).buffer as ArrayBuffer,
+			"before-merge",
 			base
 		);
 	}
@@ -72,6 +74,7 @@ export class ConflictResolver {
 		original: TFile,
 		conflict: TFile,
 		content: ArrayBuffer,
+		backupLabel: string,
 		expectedOriginal?: string
 	): Promise<boolean> {
 		const vault = this.app.vault;
@@ -90,7 +93,7 @@ export class ConflictResolver {
 			throw changedMeanwhile();
 		}
 		if (changed) {
-			await this.trashCopy(original, previous);
+			await this.trashCopy(original, previous, backupLabel);
 			if (!sameBytes(previous, await vault.readBinary(original))) {
 				throw changedMeanwhile();
 			}
@@ -114,10 +117,14 @@ export class ConflictResolver {
 	 * so no other plugin sees it, and it is trashed well within the delay
 	 * Syncthing waits before it scans a change (10 s by default).
 	 */
-	private async trashCopy(file: TFile, content: ArrayBuffer): Promise<void> {
+	private async trashCopy(
+		file: TFile,
+		content: ArrayBuffer,
+		label: string
+	): Promise<void> {
 		const adapter = this.app.vault.adapter;
 		const path = normalizePath(
-			`${this.app.vault.configDir}/${backupName(file)}`
+			`${this.app.vault.configDir}/${backupName(file, label)}`
 		);
 		await adapter.writeBinary(path, content);
 		try {
@@ -144,8 +151,8 @@ function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
 	return left.every((byte, index) => byte === right[index]);
 }
 
-function backupName(file: TFile): string {
+function backupName(file: TFile, label: string): string {
 	const stamp = new Date().toISOString().replace(/[-:.]/g, "");
 	const extension = file.extension ? `.${file.extension}` : "";
-	return `${file.basename}.before-merge-${stamp}${extension}`;
+	return `${file.basename}.${label}-${stamp}${extension}`;
 }

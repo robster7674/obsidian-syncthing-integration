@@ -74,6 +74,7 @@
 			editor?.setState(state);
 			loading = false;
 		} catch (error) {
+			if (request !== diffRequest) return;
 			console.error(error);
 			new Notice(`Could not show ${file.path}: ${error}`);
 			parentModal.close();
@@ -108,6 +109,8 @@
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not resolve the conflict: ${error}`);
+			// A step may have succeeded before the failure: show the files as they are now.
+			await showConflict(currentConflict);
 		} finally {
 			busy = false;
 		}
@@ -143,6 +146,7 @@
 	}
 
 	async function onFileChange(event: CustomEvent<{ file: TFile }>) {
+		if (busy) return;
 		await showConflict(event.detail.file);
 	}
 </script>

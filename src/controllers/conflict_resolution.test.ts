@@ -27,7 +27,7 @@ describe("ConflictResolver.keepOriginal", () => {
 	});
 });
 
-const BACKUP = /^\.obsidian\/Note\.before-merge-\d{8}T\d{9}Z\.md$/;
+const BACKUP = /^\.obsidian\/Note\.before-(merge|accepting-conflict)-\d{8}T\d{9}Z\.md$/;
 
 describe("ConflictResolver.keepConflict", () => {
 	it("puts the conflict's content in the original and both old versions in the trash", async () => {
