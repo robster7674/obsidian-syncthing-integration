@@ -3,6 +3,7 @@
 	import { EditorState, type Text } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
 	import { ButtonComponent, Notice, debounce } from "obsidian";
+	import { ConflictResolver } from "src/controllers/conflict_resolution";
 	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { ConfirmModal } from "src/views/confirm_modal";
 	import { type MergeModal } from "src/views/merge_editor";
@@ -13,16 +14,51 @@
 	export let parentModal: MergeModal;
 	let mergeEditor: MergeView;
 	let mergeEditorContainer: HTMLDivElement;
-	let contentEditorA: Text;
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	let contentEditorB: Text;
 	let toolsContainer: HTMLDivElement;
 	let previewContent = originalContent;
 	const updatePreview = debounce(
 		(doc: Text) => (previewContent = doc.toString()),
 		250
 	);
+	const resolver = new ConflictResolver(parentModal.app);
 	onDestroy(() => updatePreview.cancel());
+
+	let saving = false;
+	let saved = false;
+	const lineBreak = originalContent.includes("\r\n") ? "\r\n" : "\n";
+
+	async function save() {
+		if (saving || saved) return;
+		saving = true;
+		const merged = mergeEditor.a.state.doc.sliceString(
+			0,
+			undefined,
+			lineBreak
+		);
+		let backedUp: boolean;
+		try {
+			backedUp = await resolver.saveMerge(
+				parentModal.originalFile,
+				parentModal.modifiedFile,
+				merged,
+				originalContent
+			);
+			saved = true;
+		} catch (error) {
+			console.error(error);
+			new Notice(`Could not save the merge: ${error}`);
+			return;
+		} finally {
+			saving = false;
+		}
+		new Notice(
+			backedUp
+				? `Saved ${parentModal.originalFile.path}. The conflict and the previous version are in the trash.`
+				: `${parentModal.originalFile.path} was unchanged. The conflict is in the trash.`
+		);
+		parentModal.close();
+		parentModal.onResolved();
+	}
 
 	onMount(() => {
 		mergeEditor = new MergeView({
@@ -34,8 +70,7 @@
 					EditorView.darkTheme.of(true),
 					EditorView.updateListener.of((viewUpdate) => {
 						if (viewUpdate.docChanged) {
-							contentEditorA = viewUpdate.state.doc;
-							updatePreview(contentEditorA);
+							updatePreview(viewUpdate.state.doc);
 						}
 					}),
 				],
@@ -46,11 +81,6 @@
 					basicSetup,
 					EditorView.lineWrapping,
 					EditorView.darkTheme.of(true),
-					EditorView.updateListener.of((viewUpdate) => {
-						if (viewUpdate.docChanged) {
-							contentEditorB = viewUpdate.state.doc;
-						}
-					}),
 					EditorView.editable.of(false),
 					EditorState.readOnly.of(true),
 				],
@@ -61,33 +91,16 @@
 		new ButtonComponent(toolsContainer)
 			.setButtonText("Save merged file")
 			.setCta()
-			.onClick(async () => {
+			.onClick(() => {
 				if (mergeEditor.chunks.length > 0) {
-					new Notice(
-						"There is still some merge conflicts. Please resolve them."
-					);
 					new ConfirmModal(
 						parentModal.app,
-						"Are you sure you want to save the file?\nThere are still some merge conflicts.\nThis action will save the previewed file in the original file and delete the conflicting file.",
-						async () => {
-							new Notice("Saved file");
-							await parentModal.app.vault.delete(
-								parentModal.modifiedFile
-							);
-							new Notice("Deleted conflicting file");
-							parentModal.close();
-						}
+						`Some differences are still unresolved.\nSave the left side as it is now into ${parentModal.originalFile.path}?\nThe conflicting file and the previous version go to the trash.`,
+						() => void save()
 					).open();
 					return;
 				}
-				await parentModal.app.vault.modify(
-					parentModal.originalFile,
-					contentEditorA.toString()
-				);
-				new Notice("Saved file");
-				await parentModal.app.vault.delete(parentModal.modifiedFile);
-				new Notice("Deleted conflicting file");
-				parentModal.close();
+				void save();
 			}).buttonEl.style.margin = "1%";
 		new ButtonComponent(toolsContainer)
 			.setButtonText("Cancel merge")
