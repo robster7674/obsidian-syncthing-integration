@@ -3,10 +3,12 @@
 	import { type ConflictsModal } from "src/views/conflicts_modal";
 	import { onMount } from "svelte";
 	import ConflictItem from "./conflict_item.svelte";
+	import WarningMessage from "./warning_message.svelte";
 	import { sortFilesBy } from "src/controllers/utils";
 
 	export let parentModal: ConflictsModal;
 	export let conflicts: Map<string, TFile[]>;
+	export let unrecognised: TFile[] = [];
 	let sortSettingContainer: HTMLDivElement;
 	let sortOptions = {
 		recent: "Most recent",
@@ -16,6 +18,7 @@
 	};
 
 	onMount(() => {
+		if (!sortSettingContainer) return;
 		new Setting(sortSettingContainer)
 			.setName("Sort by date")
 			.addDropdown((dropdown) => {
@@ -40,6 +43,14 @@
 	$: if (conflicts) console.log("conflicts", conflicts);
 </script>
 
+{#if unrecognised.length > 0}
+	<WarningMessage
+		title="Unrecognised conflict names"
+		message={`These files look like Syncthing conflicts, but their names do not follow Syncthing's format, so they are not listed below: ${unrecognised
+			.map((file) => file.path)
+			.join(", ")}`}
+	/>
+{/if}
 {#if conflicts.size === 0}
 	<p>No conflicts found.</p>
 {:else}
@@ -49,6 +60,7 @@
 			<div class="divider"></div>
 		{/if}
 		<ConflictItem
+			originalPath={conflictNames}
 			conflicts={conflicts.get(conflictNames) ?? []}
 			syncthingController={parentModal.syncthingController}
 			{parentModal}

@@ -1,4 +1,4 @@
-import { Platform, type TFile } from "obsidian";
+import { Platform, TFile } from "obsidian";
 import { type SyncthingFromAndroid } from "src/data/syncthing_android_datasource";
 import { type SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import { type SyncthingFromREST } from "src/data/syncthing_remote_datasource";
@@ -11,7 +11,7 @@ import {
 } from "src/models/entities";
 import { CliFailure, Failure, RestFailure } from "src/models/failures";
 import {
-	isConflictFilename,
+	originalPathOf,
 	parseConflictFilename,
 	sortByConflictDate,
 } from "./utils";
@@ -105,83 +105,52 @@ export class SyncthingController {
 			});
 	}
 
+	/**
+	 * Gets the Syncthing conflicts of a file, and its original when `activeFile` is itself a conflict.
+	 * Only conflicts of the exact same path are returned: Syncthing writes them next to the original.
+	 */
 	async getConflictsWithOriginal(
 		activeFile: TFile,
 	): Promise<{ originalFile?: TFile; conflicts: TFile[] }> {
-		const allFiles = this.plugin.app.vault.getFiles();
-		if (isConflictFilename(activeFile.basename)) {
-			const properties = parseConflictFilename(activeFile.basename);
-			if (properties instanceof Failure) {
-				console.error(properties.message);
-				throw new Error("Error parsing conflict filename.");
-			}
-			const conflictFiles = allFiles.filter((file) => {
-				return (
-					(file.name.contains(".sync-conflict") &&
-						file.name.contains(properties.filename)) ||
-					file.basename === properties.filename
-				);
-			});
-			const originalFile = allFiles.find(
-				(file) => file.basename === properties.filename,
-			);
-			if (originalFile) conflictFiles.remove(originalFile);
-			return {
-				originalFile: originalFile,
-				conflicts: conflictFiles,
-			};
+		const originalPath = originalPathOf(activeFile);
+		if (originalPath instanceof Failure) {
+			return { conflicts: this.findConflictsOf(activeFile.path) };
 		}
-		const conflicts = allFiles.filter((file) => {
-			return (
-				file.name.contains(".sync-conflict") &&
-				file.name.contains(activeFile.basename)
-			);
-		});
 		return {
-			conflicts: conflicts,
+			originalFile: this.findFile(originalPath),
+			conflicts: this.findConflictsOf(originalPath),
 		};
 	}
 
 	/**
-	 * Gets the Syncthing conflicting files for the ConflictsModal.
-	 * It returns a list of all files that are in conflict.
-	 * (but only one version of each file, if applicable)
+	 * Gets the Syncthing conflicting files for the ConflictsModal,
+	 * grouped by the path of their original file. The list sorts them for display.
+	 * Files that contain `.sync-conflict-` but are not named the way Syncthing names conflicts are returned apart.
 	 * @see https://docs.syncthing.net/users/syncing.html#conflicting-changes
 	 */
-	async getConflicts(): Promise<Map<string, TFile[]> | Failure> {
-		// Get all conflicting files
-		const allFiles = this.plugin.app.vault.getFiles();
-		const conflictsFiles = allFiles.filter((currentFile) => {
-			// TODO: enhance this with better pattern matching
-			return currentFile.name.contains(".sync-conflict");
-		});
-		// Reorder conflicting files by filename in a Map
-		const conflictsFilesMap = new Map<string, TFile[]>();
-		for (const file of conflictsFiles) {
-			const filenameProperties = parseConflictFilename(file.name);
-			if (filenameProperties instanceof Failure) {
-				return filenameProperties;
-			}
-			const filename = filenameProperties.filename;
-			if (conflictsFilesMap.has(filename)) {
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-				conflictsFilesMap.get(filename)!.push(file);
-				conflictsFilesMap.set(
-					filename,
-					// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-					conflictsFilesMap
-						.get(filename)!
-						.sort((a, b) => sortByConflictDate(a, b)),
-				);
+	async getConflicts(): Promise<{
+		conflicts: Map<string, TFile[]>;
+		unrecognised: TFile[];
+	}> {
+		const conflicts = new Map<string, TFile[]>();
+		const unrecognised: TFile[] = [];
+		for (const file of this.plugin.app.vault.getFiles()) {
+			if (!file.name.contains(".sync-conflict-")) continue;
+			const originalPath = originalPathOf(file);
+			if (originalPath instanceof Failure) {
+				unrecognised.push(file);
 				continue;
 			}
-			conflictsFilesMap.set(filename, [file]);
+			const group = conflicts.get(originalPath) ?? [];
+			group.push(file);
+			conflicts.set(originalPath, group);
 		}
-		return conflictsFilesMap;
+		return { conflicts, unrecognised };
 	}
 
 	/**
-	 * Gets the Syncthing conflicting files for the DiffModal.
+	 * Gets the original file and its Syncthing conflicting files for the DiffModal.
+	 * `file` can be either the original or one of its conflicts.
 	 * @see https://docs.syncthing.net/users/syncing.html#conflicting-changes
 	 */
 	async getDiffFiles(file: TFile): Promise<{
@@ -189,43 +158,48 @@ export class SyncthingController {
 		conflictingFiles: TFile[] | Failure;
 		conflictingFilesProperties: Map<TFile, ConflictFilename | Failure>;
 	}> {
-		const filenameProperties = parseConflictFilename(file.name);
-		if (filenameProperties instanceof Failure) {
-			return {
-				originalFile: file,
-				conflictingFiles: filenameProperties,
-				conflictingFilesProperties: new Map<TFile, Failure>().set(
-					file,
-					filenameProperties,
-				),
-			};
-		}
-		const allFiles = this.plugin.app.vault.getFiles();
-		const conflictsFiles = allFiles.filter((currentFile) => {
-			return (
-				(currentFile.name.contains(".sync-conflict") &&
-					currentFile.name.contains(filenameProperties.filename)) ||
-				currentFile.basename === filenameProperties.filename
-			);
-		});
-		const originalFile = conflictsFiles.find(
-			(currentFile) =>
-				currentFile.basename === filenameProperties.filename,
+		const parsedPath = originalPathOf(file);
+		const originalPath =
+			parsedPath instanceof Failure ? file.path : parsedPath;
+		const originalFile = this.findFile(originalPath);
+		const conflicts = this.findConflictsOf(originalPath).sort((a, b) =>
+			sortByConflictDate(a, b),
 		);
-		if (originalFile) conflictsFiles.remove(originalFile);
+		const failure = !originalFile
+			? new Failure(`The original file ${originalPath} does not exist.`)
+			: conflicts.length === 0
+				? new Failure(`No Syncthing conflicts found for ${originalPath}.`)
+				: undefined;
 		const conflictingFilesProperties = new Map<
 			TFile,
 			Failure | ConflictFilename
 		>();
-		for (const conflictingFile of conflictsFiles) {
-			const properties = parseConflictFilename(conflictingFile.name);
-			conflictingFilesProperties.set(conflictingFile, properties);
+		for (const conflictingFile of conflicts) {
+			conflictingFilesProperties.set(
+				conflictingFile,
+				parseConflictFilename(conflictingFile.name),
+			);
 		}
 		return {
-			originalFile: originalFile ? originalFile : file,
-			conflictingFiles: conflictsFiles,
-			conflictingFilesProperties: conflictingFilesProperties,
+			originalFile: originalFile ?? file,
+			conflictingFiles: failure ?? conflicts,
+			conflictingFilesProperties,
 		};
+	}
+
+	private findConflictsOf(originalPath: string): TFile[] {
+		return this.plugin.app.vault
+			.getFiles()
+			.filter(
+				(file) =>
+					file.name.contains(".sync-conflict-") &&
+					originalPathOf(file) === originalPath,
+			);
+	}
+
+	private findFile(path: string): TFile | undefined {
+		const file = this.plugin.app.vault.getAbstractFileByPath(path);
+		return file instanceof TFile ? file : undefined;
 	}
 
 	/**

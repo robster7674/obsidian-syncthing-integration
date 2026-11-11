@@ -56,7 +56,9 @@ export function makePlugin(
 		getFiles: vi.fn(() => files),
 		getMarkdownFiles: vi.fn(() => files),
 		getAllLoadedFiles: vi.fn(() => files),
-		getAbstractFileByPath: vi.fn(() => null),
+		getAbstractFileByPath: vi.fn(
+			(path: string) => files.find((file) => file.path === path) ?? null,
+		),
 		create: vi.fn(async () => files[0]),
 		delete: vi.fn(async () => undefined),
 	};

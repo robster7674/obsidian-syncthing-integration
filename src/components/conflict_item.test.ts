@@ -5,7 +5,7 @@ import type { TFile } from "obsidian";
 import type { SyncthingController } from "src/controllers/main_controller";
 import type { ConflictsModal } from "src/views/conflicts_modal";
 import { DiffModal } from "src/views/diff_modal";
-import { makeConflictFile, makeFile } from "../../test/helpers/files";
+import { makeConflictFile } from "../../test/helpers/files";
 import ConflictItem from "./conflict_item.svelte";
 
 vi.mock("src/views/diff_modal", () => ({
@@ -42,6 +42,7 @@ describe("conflict_item.svelte", () => {
 	it("renders the filename and the number of conflicts", () => {
 		const { container } = render(ConflictItem, {
 			props: {
+				originalPath: "Note.md",
 				conflicts: makeConflicts(2),
 				syncthingController: controller,
 				parentModal,
@@ -53,9 +54,23 @@ describe("conflict_item.svelte", () => {
 		expect(container.textContent).toContain("View conflicts");
 	});
 
+	it("shows the original path, so same-named notes stay apart", () => {
+		const { container } = render(ConflictItem, {
+			props: {
+				originalPath: "b/Note.md",
+				conflicts: [makeConflictFile({ folder: "b", filename: "Note" })],
+				syncthingController: controller,
+				parentModal,
+			},
+		});
+
+		expect(container.textContent).toContain("b/Note.md");
+	});
+
 	it("uses the singular form for a single conflict", () => {
 		const { container } = render(ConflictItem, {
 			props: {
+				originalPath: "Note.md",
 				conflicts: makeConflicts(1),
 				syncthingController: controller,
 				parentModal,
@@ -71,6 +86,7 @@ describe("conflict_item.svelte", () => {
 
 		const { container } = render(ConflictItem, {
 			props: {
+				originalPath: "Note.md",
 				conflicts,
 				syncthingController: controller,
 				parentModal,
@@ -87,18 +103,4 @@ describe("conflict_item.svelte", () => {
 		);
 	});
 
-	it("shows the failure message when the first filename is invalid", () => {
-		const invalid = makeFile("Note.md");
-
-		const { container } = render(ConflictItem, {
-			props: {
-				conflicts: [invalid],
-				syncthingController: controller,
-				parentModal,
-			},
-		});
-
-		expect(container.textContent).toContain("Error parsing conflict filename");
-		expect(container.querySelectorAll("details")).toHaveLength(1);
-	});
 });
