@@ -66,7 +66,7 @@ export class ConflictResolver {
 
 	/**
 	 * Running this again after a failure is safe: once the original holds
-	 * `content`, only the conflict is left to trash.
+	 * `content`, only the conflict is left to trash, whatever was expected.
 	 */
 	private async replace(
 		original: TFile,
@@ -80,13 +80,15 @@ export class ConflictResolver {
 				`${original.path} changed while resolving the conflict. Nothing was replaced; review it and try again.`
 			);
 		const previous = await vault.readBinary(original);
+		const changed = !sameBytes(previous, content);
 		if (
+			changed &&
 			expectedOriginal !== undefined &&
-			new TextDecoder().decode(previous) !== expectedOriginal
+			withoutBom(new TextDecoder().decode(previous)) !==
+				withoutBom(expectedOriginal)
 		) {
 			throw changedMeanwhile();
 		}
-		const changed = !sameBytes(previous, content);
 		if (changed) {
 			await this.trashCopy(original, previous);
 			if (!sameBytes(previous, await vault.readBinary(original))) {
@@ -129,6 +131,10 @@ export class ConflictResolver {
 			throw error;
 		}
 	}
+}
+
+function withoutBom(text: string): string {
+	return text.startsWith("\uFEFF") ? text.slice(1) : text;
 }
 
 function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {

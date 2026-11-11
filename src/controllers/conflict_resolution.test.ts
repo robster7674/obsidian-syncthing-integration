@@ -231,6 +231,44 @@ describe("ConflictResolver with an expected original", () => {
 		expect(memory.content(ORIGINAL)).toBe("merged");
 	});
 
+	it("finishes a retry after a partial failure even though the base is now outdated", async () => {
+		const { memory, resolver } = setup();
+		const trash = memory.app.vault.trash;
+		memory.app.vault.trash = async () => {
+			throw new Error("trash unavailable");
+		};
+		const save = () =>
+			resolver.saveMerge(
+				memory.file(ORIGINAL),
+				memory.file(CONFLICT),
+				"merged",
+				"local",
+			);
+		await expect(save()).rejects.toThrow("Saved");
+
+		memory.app.vault.trash = trash;
+		await save();
+
+		expect(memory.content(ORIGINAL)).toBe("merged");
+		expect(memory.content(CONFLICT)).toBeUndefined();
+	});
+
+	it("ignores a byte order mark when comparing with what the user saw", async () => {
+		const memory = makeMemoryVault({
+			[ORIGINAL]: "\uFEFFlocal",
+			[CONFLICT]: "remote",
+		});
+		const resolver = new ConflictResolver(memory.app);
+
+		await resolver.keepConflict(
+			memory.file(ORIGINAL),
+			memory.file(CONFLICT),
+			"local",
+		);
+
+		expect(memory.content(ORIGINAL)).toBe("remote");
+	});
+
 	it("does not claim a save when nothing was written and the trash fails", async () => {
 		const { memory, resolver } = setup();
 		memory.app.vault.trash = async () => {

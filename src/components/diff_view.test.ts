@@ -27,7 +27,9 @@ function setup(contents: Record<string, string>, conflicts: string[]) {
 		Array.from(view.container.querySelectorAll("button")).find((b) =>
 			b.textContent?.includes(text),
 		) as HTMLButtonElement;
-	return { memory, modal, view, button };
+	const ready = () =>
+		waitFor(() => expect(button("Accept original").disabled).toBe(false));
+	return { memory, modal, view, button, ready };
 }
 
 describe("diff_view.svelte", () => {
@@ -68,11 +70,11 @@ describe("diff_view.svelte", () => {
 	});
 
 	it("keeps the original by trashing the conflict, then shows the next one", async () => {
-		const { memory, modal, view, button } = setup(
+		const { memory, modal, view, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },
 			[NEWER, OLDER],
 		);
-		await view.findAllByText(/newer/);
+		await ready();
 
 		await fireEvent.click(button("Accept original"));
 
@@ -88,11 +90,11 @@ describe("diff_view.svelte", () => {
 	});
 
 	it("keeps the conflict's content, trashing the old version, and closes when none are left", async () => {
-		const { memory, modal, view, button } = setup(
+		const { memory, modal, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer" },
 			[NEWER],
 		);
-		await view.findAllByText(/newer/);
+		await ready();
 
 		await fireEvent.click(button("Accept conflict"));
 
@@ -107,12 +109,12 @@ describe("diff_view.svelte", () => {
 	});
 
 	it("closes with a notice when the next conflict cannot be read", async () => {
-		const { memory, modal, view, button } = setup(
+		const { memory, modal, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },
 			[NEWER, OLDER],
 		);
 		vi.spyOn(console, "error").mockImplementation(() => {});
-		await view.findAllByText(/newer/);
+		await ready();
 		const read = memory.app.vault.read;
 		memory.app.vault.read = async (file) => {
 			if (file.path === OLDER) throw new Error("gone");
@@ -125,12 +127,27 @@ describe("diff_view.svelte", () => {
 		expect(console.error).toHaveBeenCalled();
 	});
 
-	it("ignores a second click while a resolution is running", async () => {
+	it("ignores actions until the selected conflict's diff is shown", async () => {
 		const { memory, view, button } = setup(
+			{ [ORIGINAL]: "local", [NEWER]: "newer" },
+			[NEWER],
+		);
+
+		await fireEvent.click(button("Accept original"));
+		expect(memory.trashed).toEqual([]);
+
+		await view.findAllByText(/newer/);
+		await waitFor(() =>
+			expect(button("Accept original").disabled).toBe(false),
+		);
+	});
+
+	it("ignores a second click while a resolution is running", async () => {
+		const { memory, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },
 			[NEWER, OLDER],
 		);
-		await view.findAllByText(/newer/);
+		await ready();
 
 		await Promise.all([
 			fireEvent.click(button("Accept original")),
@@ -143,7 +160,7 @@ describe("diff_view.svelte", () => {
 	});
 
 	it("keeps both files and the conflict listed when resolving fails", async () => {
-		const { memory, modal, view, button } = setup(
+		const { memory, modal, button, ready } = setup(
 			{ [ORIGINAL]: "local", [NEWER]: "newer" },
 			[NEWER],
 		);
@@ -151,7 +168,7 @@ describe("diff_view.svelte", () => {
 			throw new Error("trash unavailable");
 		};
 		vi.spyOn(console, "error").mockImplementation(() => {});
-		await view.findAllByText(/newer/);
+		await ready();
 
 		await fireEvent.click(button("Accept conflict"));
 

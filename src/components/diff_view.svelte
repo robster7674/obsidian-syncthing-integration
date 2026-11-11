@@ -20,6 +20,8 @@
 	/** Identifies the latest diff request, so an older one finishing late is ignored. */
 	let diffRequest = 0;
 	let busy = false;
+	/** True until the diff for `currentConflict` is shown, so no action targets a diff not yet visible. */
+	let loading = true;
 	const resolver = new ConflictResolver(parentModal.app);
 
 	// Modal elements styling
@@ -63,12 +65,14 @@
 	async function showConflict(file: TFile) {
 		currentConflict = file;
 		revision++;
+		loading = true;
 		const request = ++diffRequest;
 		try {
 			const { state, originalContent } = await diffState(file);
 			if (request !== diffRequest) return;
 			shownOriginal = originalContent;
 			editor?.setState(state);
+			loading = false;
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not show ${file.path}: ${error}`);
@@ -87,16 +91,16 @@
 			parentModal.close();
 			return;
 		}
-		currentConflict = remaining[0];
+		const showing = showConflict(remaining[0]);
 		parentModal.conflictingFiles = remaining;
-		await showConflict(remaining[0]);
+		await showing;
 	}
 
 	async function resolve(
 		conflict: TFile,
 		action: () => Promise<string>
 	) {
-		if (busy) return;
+		if (busy || loading) return;
 		busy = true;
 		try {
 			new Notice(await action());
@@ -128,7 +132,7 @@
 	}
 
 	function openMergeEditor() {
-		if (busy) return;
+		if (busy || loading) return;
 		const conflict = currentConflict;
 		new MergeModal(
 			parentModal.app,
@@ -192,11 +196,11 @@
 	</div>
 </div>
 <div class="tools">
-	<button disabled={busy} on:click={acceptConflict}>
+	<button disabled={busy || loading} on:click={acceptConflict}>
 		Accept conflict changes
 	</button>
-	<button disabled={busy} on:click={acceptOriginal}> Accept original </button>
-	<button disabled={busy} on:click={openMergeEditor}>
+	<button disabled={busy || loading} on:click={acceptOriginal}> Accept original </button>
+	<button disabled={busy || loading} on:click={openMergeEditor}>
 		Open in Merge Editor
 	</button>
 </div>
