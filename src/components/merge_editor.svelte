@@ -2,8 +2,8 @@
 	import { MergeView } from "@codemirror/merge";
 	import { EditorState, type Text } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
-	import { marked } from "marked";
 	import { ButtonComponent, Notice } from "obsidian";
+	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { ConfirmModal } from "src/views/confirm_modal";
 	import { type MergeModal } from "src/views/merge_editor";
 	import { onMount } from "svelte";
@@ -115,15 +115,12 @@
 <div class="merge" bind:this={mergeEditorContainer}></div>
 
 <h3>Preview the merged file</h3>
-<div class="preview">
-	{#if contentEditorA}
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-		{@html marked(contentEditorA.toString())}
-	{:else}
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-		{@html marked(originalContent)}
-	{/if}
-</div>
+<div
+	class="preview"
+	use:markdownPreview={contentEditorA
+		? contentEditorA.toString()
+		: originalContent}
+></div>
 
 <div bind:this={toolsContainer} class="tools"></div>
 

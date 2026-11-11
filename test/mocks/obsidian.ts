@@ -433,6 +433,16 @@ export function normalizePath(path: string): string {
 		.replace(/^\.\//, "");
 }
 
+/**
+ * Unlike the real one, this mock does not sanitize anything, so tests can
+ * check that the plugin stays safe even if the sanitizer misses something.
+ */
+export const sanitizeHTMLToDom = vi.fn((html: string): DocumentFragment => {
+	const template = document.createElement("template");
+	template.innerHTML = html;
+	return template.content;
+});
+
 export function debounce<T extends unknown[]>(
 	callback: (...args: T) => unknown,
 	timeout: number,
