@@ -157,133 +157,132 @@ describe("SyncthingController.hasSyncthing", () => {
 	});
 });
 
+// Two notes with the same name in different folders, as reported in LBF38#306.
+const originalA = makeFile("a/Note.md");
+const originalB = makeFile("b/Note.md");
+const olderB = makeConflictFile({
+	folder: "b",
+	date: "20210101",
+	time: "000000",
+	modifiedBy: "AAAAAAA",
+});
+const newerB = makeConflictFile({
+	folder: "b",
+	date: "20220101",
+	time: "000000",
+	modifiedBy: "BBBBBBB",
+});
+const lookalike = makeConflictFile({
+	folder: "b",
+	filename: "My Note",
+	date: "20230101",
+	time: "000000",
+});
+const unrelated = makeFile("b/Other.md");
+const vault = [originalA, originalB, olderB, newerB, lookalike, unrelated];
+
 describe("SyncthingController.getConflictsWithOriginal", () => {
-	const original = makeFile("Notes/Note.md");
-	const conflictA = makeConflictFile({
-		filename: "Note",
-		date: "20210101",
-		time: "000000",
-		modifiedBy: "AAAAAAA",
-	});
-	const conflictB = makeConflictFile({
-		filename: "Note",
-		date: "20220101",
-		time: "000000",
-		modifiedBy: "BBBBBBB",
-	});
-	const other = makeFile("Other.md");
-	const files = [original, conflictA, conflictB, other];
+	it("returns the original in the same folder and its conflicts for a conflict file", async () => {
+		const { controller } = makeHarness(vault);
 
-	it("returns the original file and its conflicts for a conflict file", async () => {
-		const { controller } = makeHarness(files);
+		const result = await controller.getConflictsWithOriginal(olderB);
 
-		const result = await controller.getConflictsWithOriginal(conflictA);
-
-		expect(result.originalFile).toBe(original);
-		expect(result.conflicts).toEqual([conflictA, conflictB]);
+		expect(result.originalFile).toBe(originalB);
+		expect(result.conflicts).toEqual([olderB, newerB]);
 	});
 
-	it("returns only the conflicts for a regular file", async () => {
-		const { controller } = makeHarness(files);
+	it("returns only the conflicts of that exact path for a regular file", async () => {
+		const { controller } = makeHarness(vault);
 
-		const result = await controller.getConflictsWithOriginal(original);
+		expect(await controller.getConflictsWithOriginal(originalA)).toEqual({
+			conflicts: [],
+		});
+		expect(await controller.getConflictsWithOriginal(originalB)).toEqual({
+			conflicts: [olderB, newerB],
+		});
+	});
+
+	it("leaves the original undefined when it does not exist", async () => {
+		const { controller } = makeHarness([olderB]);
+
+		const result = await controller.getConflictsWithOriginal(olderB);
 
 		expect(result.originalFile).toBeUndefined();
-		expect(result.conflicts).toEqual([conflictA, conflictB]);
+		expect(result.conflicts).toEqual([olderB]);
 	});
 });
 
 describe("SyncthingController.getConflicts", () => {
-	const original = makeFile("Notes/Note.md");
-	const conflictA = makeConflictFile({
-		filename: "Note",
-		date: "20210101",
-		time: "000000",
-		modifiedBy: "AAAAAAA",
-	});
-	const conflictB = makeConflictFile({
-		filename: "Note",
-		date: "20220101",
-		time: "000000",
-		modifiedBy: "BBBBBBB",
-	});
+	it("groups conflicts by original path", async () => {
+		const { controller } = makeHarness(vault);
 
-	it("groups conflicts by original filename, most recent first", async () => {
-		const { controller } = makeHarness([
-			original,
-			conflictA,
-			conflictB,
+		const { conflicts, unrecognised } = await controller.getConflicts();
+
+		expect([...conflicts.keys()].sort()).toEqual([
+			"b/My Note.md",
+			"b/Note.md",
 		]);
-
-		const result = await controller.getConflicts();
-
-		expect(result).toBeInstanceOf(Map);
-		if (!(result instanceof Map)) return;
-		expect([...result.keys()]).toEqual(["Note"]);
-		expect(result.get("Note")).toEqual([conflictB, conflictA]);
+		expect(conflicts.get("b/Note.md")).toEqual([olderB, newerB]);
+		expect(unrecognised).toEqual([]);
 	});
 
-	it("returns an empty map when there is no conflict", async () => {
-		const { controller } = makeHarness([original]);
+	it("returns empty results when there is no conflict", async () => {
+		const { controller } = makeHarness([originalA]);
 
-		const result = await controller.getConflicts();
+		const { conflicts, unrecognised } = await controller.getConflicts();
 
-		expect(result).toBeInstanceOf(Map);
-		if (!(result instanceof Map)) return;
-		expect(result.size).toBe(0);
+		expect(conflicts.size).toBe(0);
+		expect(unrecognised).toEqual([]);
 	});
 
-	it("returns a Failure when a conflict filename cannot be parsed", async () => {
-		const { controller } = makeHarness([
-			makeFile("bad.sync-conflict-x.md"),
-		]);
+	it("returns files with unrecognised conflict names apart", async () => {
+		const bad = makeFile("bad.sync-conflict-x.md");
+		const { controller } = makeHarness([bad, olderB]);
 
-		const result = await controller.getConflicts();
+		const { conflicts, unrecognised } = await controller.getConflicts();
 
-		expect(result).toBeInstanceOf(Failure);
+		expect([...conflicts.keys()]).toEqual(["b/Note.md"]);
+		expect(unrecognised).toEqual([bad]);
 	});
 });
 
 describe("SyncthingController.getDiffFiles", () => {
-	const original = makeFile("Notes/Note.md");
-	const conflictA = makeConflictFile({
-		filename: "Note",
-		date: "20210101",
-		time: "000000",
-		modifiedBy: "AAAAAAA",
-	});
-	const conflictB = makeConflictFile({
-		filename: "Note",
-		date: "20220101",
-		time: "000000",
-		modifiedBy: "BBBBBBB",
-	});
-	const other = makeFile("Other.md");
+	it("resolves the original file and the conflicting files from a conflict", async () => {
+		const { controller } = makeHarness(vault);
 
-	it("resolves the original file and the conflicting files", async () => {
-		const { controller } = makeHarness([
-			original,
-			conflictA,
-			conflictB,
-			other,
-		]);
+		const result = await controller.getDiffFiles(olderB);
 
-		const result = await controller.getDiffFiles(conflictA);
-
-		expect(result.originalFile).toBe(original);
-		expect(result.conflictingFiles).toEqual([conflictA, conflictB]);
+		expect(result.originalFile).toBe(originalB);
+		expect(result.conflictingFiles).toEqual([newerB, olderB]);
 		expect(result.conflictingFilesProperties.size).toBe(2);
 	});
 
-	it("returns a Failure for a file that is not a conflict", async () => {
-		const { controller } = makeHarness([original, other]);
+	it("resolves the conflicting files from the original", async () => {
+		const { controller } = makeHarness(vault);
 
-		const result = await controller.getDiffFiles(other);
+		const result = await controller.getDiffFiles(originalB);
 
-		expect(result.originalFile).toBe(other);
+		expect(result.originalFile).toBe(originalB);
+		expect(result.conflictingFiles).toEqual([newerB, olderB]);
+	});
+
+	it("returns a Failure for a file without conflicts", async () => {
+		const { controller } = makeHarness(vault);
+
+		const result = await controller.getDiffFiles(originalA);
+
+		expect(result.originalFile).toBe(originalA);
 		expect(result.conflictingFiles).toBeInstanceOf(Failure);
-		expect(result.conflictingFilesProperties.get(other)).toBeInstanceOf(
-			Failure,
+	});
+
+	it("returns a Failure instead of guessing when the original is missing", async () => {
+		const { controller } = makeHarness([originalA, olderB]);
+
+		const result = await controller.getDiffFiles(olderB);
+
+		expect(result.conflictingFiles).toBeInstanceOf(Failure);
+		expect((result.conflictingFiles as Failure).message).toContain(
+			"b/Note.md",
 		);
 	});
 });
