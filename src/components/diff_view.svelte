@@ -31,12 +31,17 @@
 		await showConflict(currentConflict);
 	});
 
-	async function diffState(conflict: TFile): Promise<EditorState> {
+	/** The original's text as the diff shows it, so a change made since is not overwritten. */
+	let shownOriginal: string | undefined;
+
+	async function diffState(
+		conflict: TFile
+	): Promise<{ state: EditorState; originalContent: string }> {
 		const [conflictContent, originalContent] = await Promise.all([
 			parentModal.app.vault.read(conflict),
 			parentModal.app.vault.read(parentModal.originalFile),
 		]);
-		return EditorState.create({
+		const state = EditorState.create({
 			doc: conflictContent,
 			extensions: [
 				basicSetup,
@@ -52,6 +57,7 @@
 				}),
 			],
 		});
+		return { state, originalContent };
 	}
 
 	async function showConflict(file: TFile) {
@@ -59,8 +65,10 @@
 		revision++;
 		const request = ++diffRequest;
 		try {
-			const state = await diffState(file);
-			if (request === diffRequest) editor?.setState(state);
+			const { state, originalContent } = await diffState(file);
+			if (request !== diffRequest) return;
+			shownOriginal = originalContent;
+			editor?.setState(state);
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not show ${file.path}: ${error}`);
@@ -105,7 +113,7 @@
 		const original = parentModal.originalFile;
 		const conflict = currentConflict;
 		await resolve(conflict, async () =>
-			(await resolver.keepConflict(original, conflict))
+			(await resolver.keepConflict(original, conflict, shownOriginal))
 				? `Kept the conflicting version of ${original.path}. The previous version is in the trash.`
 				: `${conflict.path} was identical to ${original.path} and is in the trash.`
 		);

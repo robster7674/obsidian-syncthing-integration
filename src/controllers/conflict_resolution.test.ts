@@ -200,6 +200,54 @@ describe("ConflictResolver.saveMerge", () => {
 	});
 });
 
+describe("ConflictResolver with an expected original", () => {
+	it("refuses to save a merge whose base is out of date", async () => {
+		const { memory, resolver } = setup();
+
+		await expect(
+			resolver.saveMerge(
+				memory.file(ORIGINAL),
+				memory.file(CONFLICT),
+				"merged",
+				"what the editor opened with",
+			),
+		).rejects.toThrow("changed while resolving");
+
+		expect(memory.content(ORIGINAL)).toBe("local");
+		expect(memory.content(CONFLICT)).toBe("remote");
+		expect(memory.trashed).toEqual([]);
+	});
+
+	it("saves when the base still matches", async () => {
+		const { memory, resolver } = setup();
+
+		await resolver.saveMerge(
+			memory.file(ORIGINAL),
+			memory.file(CONFLICT),
+			"merged",
+			"local",
+		);
+
+		expect(memory.content(ORIGINAL)).toBe("merged");
+	});
+
+	it("does not claim a save when nothing was written and the trash fails", async () => {
+		const { memory, resolver } = setup();
+		memory.app.vault.trash = async () => {
+			throw new Error("trash unavailable");
+		};
+
+		const attempt = resolver.saveMerge(
+			memory.file(ORIGINAL),
+			memory.file(CONFLICT),
+			"local",
+		);
+
+		await expect(attempt).rejects.toThrow(`Could not move ${CONFLICT}`);
+		await expect(attempt).rejects.not.toThrow("Saved");
+	});
+});
+
 describe("ConflictResolver.restoreAsOriginal", () => {
 	it("gives an orphaned conflict its original path", async () => {
 		const memory = makeMemoryVault({ [CONFLICT]: "remote" });

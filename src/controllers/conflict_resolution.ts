@@ -19,29 +19,38 @@ export class ConflictResolver {
 	/**
 	 * Keeps the conflict: its bytes replace the original's, which go to the trash.
 	 * The original keeps its path, so links to it are unaffected.
+	 * @param expectedOriginal the original's text as the user saw it; if it changed since, nothing is replaced.
 	 * @returns whether a previous version was put in the trash (not when both files were identical).
 	 */
-	async keepConflict(original: TFile, conflict: TFile): Promise<boolean> {
+	async keepConflict(
+		original: TFile,
+		conflict: TFile,
+		expectedOriginal?: string
+	): Promise<boolean> {
 		return this.replace(
 			original,
 			conflict,
-			await this.app.vault.readBinary(conflict)
+			await this.app.vault.readBinary(conflict),
+			expectedOriginal
 		);
 	}
 
 	/**
 	 * Writes `merged` into the original, whose previous content goes to the trash, then trashes the conflict.
+	 * @param base the original's text the merge started from; if the original changed since, nothing is replaced.
 	 * @returns whether a previous version was put in the trash (not when `merged` equals it).
 	 */
 	async saveMerge(
 		original: TFile,
 		conflict: TFile,
-		merged: string
+		merged: string,
+		base?: string
 	): Promise<boolean> {
 		return this.replace(
 			original,
 			conflict,
-			new TextEncoder().encode(merged).buffer as ArrayBuffer
+			new TextEncoder().encode(merged).buffer as ArrayBuffer,
+			base
 		);
 	}
 
@@ -62,17 +71,26 @@ export class ConflictResolver {
 	private async replace(
 		original: TFile,
 		conflict: TFile,
-		content: ArrayBuffer
+		content: ArrayBuffer,
+		expectedOriginal?: string
 	): Promise<boolean> {
 		const vault = this.app.vault;
+		const changedMeanwhile = () =>
+			new Error(
+				`${original.path} changed while resolving the conflict. Nothing was replaced; review it and try again.`
+			);
 		const previous = await vault.readBinary(original);
+		if (
+			expectedOriginal !== undefined &&
+			new TextDecoder().decode(previous) !== expectedOriginal
+		) {
+			throw changedMeanwhile();
+		}
 		const changed = !sameBytes(previous, content);
 		if (changed) {
 			await this.trashCopy(original, previous);
 			if (!sameBytes(previous, await vault.readBinary(original))) {
-				throw new Error(
-					`${original.path} changed while resolving the conflict. Nothing was replaced; try again.`
-				);
+				throw changedMeanwhile();
 			}
 			await vault.modifyBinary(original, content);
 		}
@@ -80,7 +98,9 @@ export class ConflictResolver {
 			await vault.trash(conflict, true);
 		} catch (error) {
 			throw new Error(
-				`Saved ${original.path}, but could not move ${conflict.path} to the trash: ${error}`
+				changed
+					? `Saved ${original.path}, but could not move ${conflict.path} to the trash: ${error}`
+					: `Could not move ${conflict.path} to the trash: ${error}`
 			);
 		}
 		return changed;

@@ -64,6 +64,22 @@ describe("DiffModal with a missing original", () => {
 		expect(memory.trashed).toEqual([]);
 	});
 
+	it("stays open with the buttons enabled when an action fails", async () => {
+		const { memory, close, button } = await openOrphan({
+			[CONFLICT]: "remote",
+		});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		memory.app.fileManager.renameFile = async () => {
+			throw new Error("permission denied");
+		};
+
+		button("Restore as original").click();
+
+		await vi.waitFor(() => expect(console.error).toHaveBeenCalled());
+		expect(close).not.toHaveBeenCalled();
+		expect(button("Move to trash").disabled).toBe(false);
+	});
+
 	it("moves the conflict to the trash", async () => {
 		const { memory, close, button } = await openOrphan({
 			[CONFLICT]: "remote",

@@ -24,18 +24,26 @@
 	onDestroy(() => updatePreview.cancel());
 
 	let saving = false;
+	let saved = false;
+	const lineBreak = originalContent.includes("\r\n") ? "\r\n" : "\n";
 
 	async function save() {
-		if (saving) return;
+		if (saving || saved) return;
 		saving = true;
-		const merged = mergeEditor.a.state.doc.toString();
+		const merged = mergeEditor.a.state.doc.sliceString(
+			0,
+			undefined,
+			lineBreak
+		);
 		let backedUp: boolean;
 		try {
 			backedUp = await resolver.saveMerge(
 				parentModal.originalFile,
 				parentModal.modifiedFile,
-				merged
+				merged,
+				originalContent
 			);
+			saved = true;
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not save the merge: ${error}`);

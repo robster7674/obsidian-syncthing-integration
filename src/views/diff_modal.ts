@@ -63,19 +63,24 @@ export class DiffModal extends Modal {
 		});
 		const buttons = this.contentEl.createDiv("confirm-modal-buttons");
 		let busy = false;
-		const resolve = async (action: () => Promise<void>, done: string) => {
-			if (busy) return;
-			busy = true;
+		const setBusy = (value: boolean) => {
+			busy = value;
 			buttons
 				.querySelectorAll("button")
-				.forEach((button) => (button.disabled = true));
+				.forEach((button) => (button.disabled = value));
+		};
+		const resolve = async (action: () => Promise<void>, done: string) => {
+			if (busy) return;
+			setBusy(true);
 			try {
 				await action();
-				new Notice(done);
 			} catch (error) {
 				console.error(error);
 				new Notice(`Could not resolve the conflict: ${error}`);
+				setBusy(false);
+				return;
 			}
+			new Notice(done);
 			this.close();
 		};
 		new ButtonComponent(buttons)

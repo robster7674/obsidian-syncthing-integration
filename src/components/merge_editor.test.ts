@@ -140,6 +140,54 @@ describe("merge_editor.svelte", () => {
 		expect(memory.trashed).toHaveLength(1);
 	});
 
+	it("keeps CRLF line endings, so an unedited save changes nothing", async () => {
+		const { memory, modal } = vaultModal("a\r\nb\r\n", "a\r\nc\r\n");
+		const { save } = renderEditor("a\r\nb\r\n", "a\r\nc\r\n", modal);
+
+		await fireEvent.click(save);
+		vi.mocked(ConfirmModal).mock.calls[0][2]();
+
+		await waitFor(() => expect(modal.onResolved).toHaveBeenCalled());
+		expect(memory.content(ORIGINAL)).toBe("a\r\nb\r\n");
+		expect(trashedText(memory)).toEqual([
+			{ path: CONFLICT, content: "a\r\nc\r\n" },
+		]);
+	});
+
+	it("refuses to overwrite changes synced while merging", async () => {
+		const { memory, modal } = vaultModal("v1", "remote");
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const { save, editorA } = renderEditor("v1", "remote", modal);
+		editorA.dispatch({
+			changes: { from: 0, to: editorA.state.doc.length, insert: "merged" },
+		});
+		await memory.app.vault.modify(memory.file(ORIGINAL), "v2");
+
+		await fireEvent.click(save);
+		vi.mocked(ConfirmModal).mock.calls[0][2]();
+
+		await waitFor(() => expect(console.error).toHaveBeenCalled());
+		expect(memory.content(ORIGINAL)).toBe("v2");
+		expect(memory.content(CONFLICT)).toBe("remote");
+		expect(modal.onResolved).not.toHaveBeenCalled();
+	});
+
+	it("ignores a stacked confirmation once the merge is saved", async () => {
+		const { memory, modal } = vaultModal("local", "remote");
+		const { save } = renderEditor("local", "remote", modal);
+
+		await fireEvent.click(save);
+		await fireEvent.click(save);
+		const [first, second] = vi.mocked(ConfirmModal).mock.calls;
+		first[2]();
+		await waitFor(() => expect(modal.onResolved).toHaveBeenCalled());
+		second[2]();
+
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(modal.onResolved).toHaveBeenCalledTimes(1);
+		expect(memory.app.vault.trash).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps both files and the editor open when saving fails", async () => {
 		const { memory, modal } = vaultModal("same", "same");
 		memory.app.vault.trash = async () => {
