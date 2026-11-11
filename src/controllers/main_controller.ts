@@ -9,7 +9,12 @@ import {
 	type SyncthingFolder,
 	type ConflictFilename,
 } from "src/models/entities";
-import { CliFailure, Failure, RestFailure } from "src/models/failures";
+import {
+	CliFailure,
+	Failure,
+	MissingOriginalFailure,
+	RestFailure,
+} from "src/models/failures";
 import {
 	originalPathOf,
 	parseConflictFilename,
@@ -166,7 +171,7 @@ export class SyncthingController {
 			sortByConflictDate(a, b),
 		);
 		const failure = !originalFile
-			? new Failure(`The original file ${originalPath} does not exist.`)
+			? new MissingOriginalFailure(originalPath)
 			: conflicts.length === 0
 				? new Failure(`No Syncthing conflicts found for ${originalPath}.`)
 				: undefined;

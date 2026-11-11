@@ -12,3 +12,13 @@ export class CliFailure extends Failure {
 		super(message ? message : "Failed to get configuration from CLI");
 	}
 }
+
+/**
+ * The original file of a Syncthing conflict no longer exists.
+ */
+export class MissingOriginalFailure extends Failure {
+	constructor(public originalPath: string) {
+		super(`The original file ${originalPath} does not exist.`);
+	}
+}
+
