@@ -58,60 +58,65 @@
 		currentConflict = file;
 		revision++;
 		const request = ++diffRequest;
-		const state = await diffState(file);
-		if (request === diffRequest) editor?.setState(state);
+		try {
+			const state = await diffState(file);
+			if (request === diffRequest) editor?.setState(state);
+		} catch (error) {
+			console.error(error);
+			new Notice(`Could not show ${file.path}: ${error}`);
+			parentModal.close();
+		}
 	}
 
 	/**
 	 * Drops a resolved conflict from the list, then shows the next one or closes.
 	 */
 	async function resolved(conflict: TFile) {
-		parentModal.conflictingFiles.remove(conflict);
-		parentModal.conflictingFiles = parentModal.conflictingFiles;
-		if (parentModal.conflictingFiles.length === 0) {
+		const remaining = parentModal.conflictingFiles.filter(
+			(file) => file !== conflict
+		);
+		if (remaining.length === 0) {
 			parentModal.close();
 			return;
 		}
-		await showConflict(parentModal.conflictingFiles[0]);
+		currentConflict = remaining[0];
+		parentModal.conflictingFiles = remaining;
+		await showConflict(remaining[0]);
 	}
 
 	async function resolve(
 		conflict: TFile,
-		action: () => Promise<void>,
-		done: string
+		action: () => Promise<string>
 	) {
 		if (busy) return;
 		busy = true;
 		try {
-			await action();
+			new Notice(await action());
+			await resolved(conflict);
 		} catch (error) {
 			console.error(error);
 			new Notice(`Could not resolve the conflict: ${error}`);
-			return;
 		} finally {
 			busy = false;
 		}
-		new Notice(done);
-		await resolved(conflict);
 	}
 
 	async function acceptConflict() {
 		const original = parentModal.originalFile;
 		const conflict = currentConflict;
-		await resolve(
-			conflict,
-			() => resolver.keepConflict(original, conflict),
-			`Kept the conflicting version of ${original.path}. The previous version is in the trash.`
+		await resolve(conflict, async () =>
+			(await resolver.keepConflict(original, conflict))
+				? `Kept the conflicting version of ${original.path}. The previous version is in the trash.`
+				: `${conflict.path} was identical to ${original.path} and is in the trash.`
 		);
 	}
 
 	async function acceptOriginal() {
 		const conflict = currentConflict;
-		await resolve(
-			conflict,
-			() => resolver.keepOriginal(conflict),
-			`Kept the original. ${conflict.path} is in the trash.`
-		);
+		await resolve(conflict, async () => {
+			await resolver.keepOriginal(conflict);
+			return `Kept the original. ${conflict.path} is in the trash.`;
+		});
 	}
 
 	function openMergeEditor() {
@@ -121,7 +126,7 @@
 			parentModal.app,
 			parentModal.originalFile,
 			conflict,
-			() => resolved(conflict)
+			() => void resolved(conflict)
 		).open();
 	}
 
@@ -164,12 +169,16 @@
 				<p>Loading preview...</p>
 			{:then content}
 				<div class="preview" use:markdownPreview={content}></div>
+			{:catch error}
+				<p>Could not read the file: {error}</p>
 			{/await}
 			<h2>Conflicting file preview</h2>
 			{#await parentModal.app.vault.cachedRead(currentConflict)}
 				<p>Loading preview...</p>
 			{:then content}
 				<div class="preview" use:markdownPreview={content}></div>
+			{:catch error}
+				<p>Could not read the file: {error}</p>
 			{/await}
 		{/key}
 	</div>

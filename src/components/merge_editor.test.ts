@@ -6,7 +6,7 @@ import { App } from "obsidian";
 import { ConfirmModal } from "src/views/confirm_modal";
 import type { MergeModal } from "src/views/merge_editor";
 import { makeFile } from "../../test/helpers/files";
-import { makeMemoryVault, type MemoryVault } from "../../test/helpers/vault";
+import { makeMemoryVault, type MemoryVault, trashedText } from "../../test/helpers/vault";
 import MergeEditor from "./merge_editor.svelte";
 
 vi.mock("src/views/confirm_modal", () => ({
@@ -103,7 +103,7 @@ describe("merge_editor.svelte", () => {
 
 		await waitFor(() => expect(modal.onResolved).toHaveBeenCalled());
 		expect(memory.content(ORIGINAL)).toBe("same");
-		expect(memory.trashed).toEqual([{ path: CONFLICT, content: "same" }]);
+		expect(trashedText(memory)).toEqual([{ path: CONFLICT, content: "same" }]);
 		expect(modal.close).toHaveBeenCalled();
 	});
 

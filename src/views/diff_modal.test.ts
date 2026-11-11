@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SyncthingController } from "src/controllers/main_controller";
 import { MissingOriginalFailure } from "src/models/failures";
-import { makeMemoryVault } from "../../test/helpers/vault";
+import { makeMemoryVault, trashedText } from "../../test/helpers/vault";
 import { DiffModal } from "./diff_modal";
 
 const ORIGINAL = "b/Note.md";
@@ -51,6 +51,19 @@ describe("DiffModal with a missing original", () => {
 		expect(memory.content(CONFLICT)).toBeUndefined();
 	});
 
+	it("runs only the first action when buttons are clicked in a row", async () => {
+		const { memory, close, button } = await openOrphan({
+			[CONFLICT]: "remote",
+		});
+
+		button("Restore as original").click();
+		button("Move to trash").click();
+
+		await vi.waitFor(() => expect(close).toHaveBeenCalled());
+		expect(memory.content(ORIGINAL)).toBe("remote");
+		expect(memory.trashed).toEqual([]);
+	});
+
 	it("moves the conflict to the trash", async () => {
 		const { memory, close, button } = await openOrphan({
 			[CONFLICT]: "remote",
@@ -59,6 +72,6 @@ describe("DiffModal with a missing original", () => {
 		button("Move to trash").click();
 
 		await vi.waitFor(() => expect(close).toHaveBeenCalled());
-		expect(memory.trashed).toEqual([{ path: CONFLICT, content: "remote" }]);
+		expect(trashedText(memory)).toEqual([{ path: CONFLICT, content: "remote" }]);
 	});
 });

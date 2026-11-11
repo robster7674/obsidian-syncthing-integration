@@ -29,8 +29,9 @@
 		if (saving) return;
 		saving = true;
 		const merged = mergeEditor.a.state.doc.toString();
+		let backedUp: boolean;
 		try {
-			await resolver.saveMerge(
+			backedUp = await resolver.saveMerge(
 				parentModal.originalFile,
 				parentModal.modifiedFile,
 				merged
@@ -43,7 +44,9 @@
 			saving = false;
 		}
 		new Notice(
-			`Saved ${parentModal.originalFile.path}. The conflict and the previous version are in the trash.`
+			backedUp
+				? `Saved ${parentModal.originalFile.path}. The conflict and the previous version are in the trash.`
+				: `${parentModal.originalFile.path} was unchanged. The conflict is in the trash.`
 		);
 		parentModal.close();
 		parentModal.onResolved();

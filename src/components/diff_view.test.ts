@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import type { TFile } from "obsidian";
 import type { DiffModal } from "src/views/diff_modal";
 import { makeFile } from "../../test/helpers/files";
-import { makeMemoryVault } from "../../test/helpers/vault";
+import { makeMemoryVault, trashedText } from "../../test/helpers/vault";
 import DiffView from "./diff_view.svelte";
 
 afterEach(cleanup);
@@ -81,7 +81,7 @@ describe("diff_view.svelte", () => {
 				OLDER,
 			]),
 		);
-		expect(memory.trashed).toEqual([{ path: NEWER, content: "newer" }]);
+		expect(trashedText(memory)).toEqual([{ path: NEWER, content: "newer" }]);
 		expect(memory.content(ORIGINAL)).toBe("local");
 		await view.findAllByText(/older/);
 		expect(modal.close).not.toHaveBeenCalled();
@@ -104,6 +104,25 @@ describe("diff_view.svelte", () => {
 			"newer",
 		]);
 		expect(memory.app.vault.delete).not.toHaveBeenCalled();
+	});
+
+	it("closes with a notice when the next conflict cannot be read", async () => {
+		const { memory, modal, view, button } = setup(
+			{ [ORIGINAL]: "local", [NEWER]: "newer", [OLDER]: "older" },
+			[NEWER, OLDER],
+		);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		await view.findAllByText(/newer/);
+		const read = memory.app.vault.read;
+		memory.app.vault.read = async (file) => {
+			if (file.path === OLDER) throw new Error("gone");
+			return read(file);
+		};
+
+		await fireEvent.click(button("Accept original"));
+
+		await waitFor(() => expect(modal.close).toHaveBeenCalled());
+		expect(console.error).toHaveBeenCalled();
 	});
 
 	it("ignores a second click while a resolution is running", async () => {

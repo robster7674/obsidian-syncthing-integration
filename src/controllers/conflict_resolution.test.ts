@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeMemoryVault } from "../../test/helpers/vault";
+import { makeMemoryVault, trashedText } from "../../test/helpers/vault";
 import { ConflictResolver } from "./conflict_resolution";
 
 const ORIGINAL = "b/Note.md";
@@ -22,7 +22,7 @@ describe("ConflictResolver.keepOriginal", () => {
 
 		expect(memory.content(ORIGINAL)).toBe("local");
 		expect(memory.content(CONFLICT)).toBeUndefined();
-		expect(memory.trashed).toEqual([{ path: CONFLICT, content: "remote" }]);
+		expect(trashedText(memory)).toEqual([{ path: CONFLICT, content: "remote" }]);
 		expect(memory.content("a/Note.md")).toBe("other folder");
 	});
 });
@@ -39,7 +39,7 @@ describe("ConflictResolver.keepConflict", () => {
 		expect(memory.file(ORIGINAL)).toBe(original);
 		expect(memory.content(ORIGINAL)).toBe("remote");
 		expect(memory.content(CONFLICT)).toBeUndefined();
-		expect(memory.trashed).toEqual([
+		expect(trashedText(memory)).toEqual([
 			{ path: expect.stringMatching(BACKUP), content: "local" },
 			{ path: CONFLICT, content: "remote" },
 		]);
@@ -60,7 +60,7 @@ describe("ConflictResolver.keepConflict", () => {
 		expect(memory.content(ORIGINAL)).toBe("local");
 		expect(memory.content(CONFLICT)).toBe("remote");
 		expect(memory.hidden.size).toBe(0);
-		expect(memory.app.vault.modify).not.toHaveBeenCalled();
+		expect(memory.app.vault.modifyBinary).not.toHaveBeenCalled();
 	});
 
 	it("falls back to Obsidian's trash folder when the system trash is off", async () => {
@@ -76,6 +76,48 @@ describe("ConflictResolver.keepConflict", () => {
 	});
 });
 
+describe("ConflictResolver with binary files", () => {
+	it("keeps a binary conflict byte for byte, and backs up the original exactly", async () => {
+		const local = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00, 0xfe]);
+		const remote = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x80, 0xc0, 0x01]);
+		const memory = makeMemoryVault({
+			"photo.png": local,
+			"photo.sync-conflict-20220101-000000-BBBBBBB.png": remote,
+		});
+		const resolver = new ConflictResolver(memory.app);
+
+		await resolver.keepConflict(
+			memory.file("photo.png"),
+			memory.file("photo.sync-conflict-20220101-000000-BBBBBBB.png"),
+		);
+
+		expect(memory.bytes("photo.png")).toEqual(remote);
+		expect(memory.trashed.map((entry) => entry.bytes)).toEqual([
+			local,
+			remote,
+		]);
+	});
+});
+
+describe("ConflictResolver when the original changes during resolution", () => {
+	it("refuses to overwrite content it has not backed up", async () => {
+		const { memory, resolver } = setup();
+		const original = memory.file(ORIGINAL);
+		const writeBinary = memory.app.vault.adapter.writeBinary;
+		memory.app.vault.adapter.writeBinary = async (path, data) => {
+			await writeBinary(path, data);
+			await memory.app.vault.modify(original, "synced meanwhile");
+		};
+
+		await expect(
+			resolver.keepConflict(original, memory.file(CONFLICT)),
+		).rejects.toThrow("changed while resolving");
+
+		expect(memory.content(ORIGINAL)).toBe("synced meanwhile");
+		expect(memory.content(CONFLICT)).toBe("remote");
+	});
+});
+
 describe("ConflictResolver.saveMerge", () => {
 	it("trashes the previous content, writes the merge, then trashes the conflict", async () => {
 		const { memory, resolver } = setup();
@@ -88,7 +130,7 @@ describe("ConflictResolver.saveMerge", () => {
 
 		expect(memory.content(ORIGINAL)).toBe("merged");
 		expect(memory.content(CONFLICT)).toBeUndefined();
-		expect(memory.trashed).toEqual([
+		expect(trashedText(memory)).toEqual([
 			{ path: expect.stringMatching(BACKUP), content: "local" },
 			{ path: CONFLICT, content: "remote" },
 		]);
@@ -98,19 +140,20 @@ describe("ConflictResolver.saveMerge", () => {
 	it("does not back up an original that the merge leaves unchanged", async () => {
 		const { memory, resolver } = setup();
 
-		await resolver.saveMerge(
+		const backedUp = await resolver.saveMerge(
 			memory.file(ORIGINAL),
 			memory.file(CONFLICT),
 			"local",
 		);
 
-		expect(memory.app.vault.modify).not.toHaveBeenCalled();
-		expect(memory.trashed).toEqual([{ path: CONFLICT, content: "remote" }]);
+		expect(backedUp).toBe(false);
+		expect(memory.app.vault.modifyBinary).not.toHaveBeenCalled();
+		expect(trashedText(memory)).toEqual([{ path: CONFLICT, content: "remote" }]);
 	});
 
 	it("keeps the conflict when writing the merge fails", async () => {
 		const { memory, resolver } = setup();
-		memory.app.vault.modify = async () => {
+		memory.app.vault.modifyBinary = async () => {
 			throw new Error("disk full");
 		};
 

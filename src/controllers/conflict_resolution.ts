@@ -17,22 +17,32 @@ export class ConflictResolver {
 	}
 
 	/**
-	 * Keeps the conflict: its content replaces the original's, which goes to the trash.
+	 * Keeps the conflict: its bytes replace the original's, which go to the trash.
 	 * The original keeps its path, so links to it are unaffected.
+	 * @returns whether a previous version was put in the trash (not when both files were identical).
 	 */
-	async keepConflict(original: TFile, conflict: TFile): Promise<void> {
-		await this.replace(original, conflict, await this.app.vault.read(conflict));
+	async keepConflict(original: TFile, conflict: TFile): Promise<boolean> {
+		return this.replace(
+			original,
+			conflict,
+			await this.app.vault.readBinary(conflict)
+		);
 	}
 
 	/**
 	 * Writes `merged` into the original, whose previous content goes to the trash, then trashes the conflict.
+	 * @returns whether a previous version was put in the trash (not when `merged` equals it).
 	 */
 	async saveMerge(
 		original: TFile,
 		conflict: TFile,
 		merged: string
-	): Promise<void> {
-		await this.replace(original, conflict, merged);
+	): Promise<boolean> {
+		return this.replace(
+			original,
+			conflict,
+			new TextEncoder().encode(merged).buffer as ArrayBuffer
+		);
 	}
 
 	/**
@@ -52,20 +62,28 @@ export class ConflictResolver {
 	private async replace(
 		original: TFile,
 		conflict: TFile,
-		content: string
-	): Promise<void> {
-		const previous = await this.app.vault.read(original);
-		if (previous !== content) {
+		content: ArrayBuffer
+	): Promise<boolean> {
+		const vault = this.app.vault;
+		const previous = await vault.readBinary(original);
+		const changed = !sameBytes(previous, content);
+		if (changed) {
 			await this.trashCopy(original, previous);
-			await this.app.vault.modify(original, content);
+			if (!sameBytes(previous, await vault.readBinary(original))) {
+				throw new Error(
+					`${original.path} changed while resolving the conflict. Nothing was replaced; try again.`
+				);
+			}
+			await vault.modifyBinary(original, content);
 		}
 		try {
-			await this.app.vault.trash(conflict, true);
+			await vault.trash(conflict, true);
 		} catch (error) {
 			throw new Error(
 				`Saved ${original.path}, but could not move ${conflict.path} to the trash: ${error}`
 			);
 		}
+		return changed;
 	}
 
 	/**
@@ -74,12 +92,12 @@ export class ConflictResolver {
 	 * so no other plugin sees it, and it is trashed well within the delay
 	 * Syncthing waits before it scans a change (10 s by default).
 	 */
-	private async trashCopy(file: TFile, content: string): Promise<void> {
+	private async trashCopy(file: TFile, content: ArrayBuffer): Promise<void> {
 		const adapter = this.app.vault.adapter;
 		const path = normalizePath(
 			`${this.app.vault.configDir}/${backupName(file)}`
 		);
-		await adapter.write(path, content);
+		await adapter.writeBinary(path, content);
 		try {
 			if (!(await adapter.trashSystem(path))) {
 				await adapter.trashLocal(path);
@@ -91,6 +109,13 @@ export class ConflictResolver {
 			throw error;
 		}
 	}
+}
+
+function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+	if (a.byteLength !== b.byteLength) return false;
+	const left = new Uint8Array(a);
+	const right = new Uint8Array(b);
+	return left.every((byte, index) => byte === right[index]);
 }
 
 function backupName(file: TFile): string {

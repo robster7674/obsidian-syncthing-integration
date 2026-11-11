@@ -62,7 +62,13 @@ export class DiffModal extends Modal {
 			text: `${originalPath} no longer exists. Restore ${this.file.path} as ${originalPath}, or move it to the trash.`,
 		});
 		const buttons = this.contentEl.createDiv("confirm-modal-buttons");
+		let busy = false;
 		const resolve = async (action: () => Promise<void>, done: string) => {
+			if (busy) return;
+			busy = true;
+			buttons
+				.querySelectorAll("button")
+				.forEach((button) => (button.disabled = true));
 			try {
 				await action();
 				new Notice(done);
