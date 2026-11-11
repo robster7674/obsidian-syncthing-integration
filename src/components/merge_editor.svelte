@@ -20,8 +20,7 @@
 	let previewContent = originalContent;
 	const updatePreview = debounce(
 		(doc: Text) => (previewContent = doc.toString()),
-		250,
-		true
+		250
 	);
 	onDestroy(() => updatePreview.cancel());
 

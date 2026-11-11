@@ -33,6 +33,28 @@ describe("renderMarkdownPreview", () => {
 		expect(boxes[0].disabled).toBe(true);
 	});
 
+	it("keeps open details and code languages", () => {
+		const container = render(
+			'<details open><summary>s</summary>body</details>\n\n```ts\nconst a = 1;\n```\n\n<code class="modal-container">x</code>',
+		);
+
+		expect(container.querySelector("details")?.hasAttribute("open")).toBe(
+			true,
+		);
+		const codes = container.querySelectorAll("code");
+		expect(codes[0].className).toBe("language-ts");
+		expect(codes[1].className).toBe("");
+	});
+
+	it("flattens nesting deeper than the limit to text", () => {
+		const container = render(
+			`${"<div>".repeat(1000)}deep${"</div>".repeat(1000)}`,
+		);
+
+		expect(container.textContent).toContain("deep");
+		expect(container.querySelectorAll("div").length).toBeLessThan(200);
+	});
+
 	it("keeps only allowlisted attributes", () => {
 		const container = render(
 			'<p class="modal-container" style="position:fixed" id="x" onclick="alert(1)" data-a="b">text</p>\n\n<a href="https://ok.example" ping="https://tracker.example" target="_blank">link</a>',
