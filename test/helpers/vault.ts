@@ -107,6 +107,7 @@ export function makeMemoryVault(
 			remove: vi.fn(async (path: string) => {
 				takeHidden(path);
 			}),
+			exists: vi.fn(async (path: string) => files.has(path) || hidden.has(path)),
 		},
 	};
 	const fileManager = {

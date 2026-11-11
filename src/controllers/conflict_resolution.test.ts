@@ -297,6 +297,26 @@ describe("ConflictResolver.restoreAsOriginal", () => {
 		expect(memory.content(CONFLICT)).toBeUndefined();
 	});
 
+	it("refuses a path taken by a file that differs only in case", async () => {
+		const memory = makeMemoryVault({ "b/note.md": "x", [CONFLICT]: "remote" });
+		const resolver = new ConflictResolver(memory.app);
+
+		await expect(
+			resolver.restoreAsOriginal(memory.file(CONFLICT), ORIGINAL),
+		).rejects.toThrow("already exists");
+	});
+
+	it("refuses a path taken outside the vault index", async () => {
+		const memory = makeMemoryVault({ [CONFLICT]: "remote" });
+		memory.app.vault.adapter.exists = vi.fn(async () => true);
+		const resolver = new ConflictResolver(memory.app);
+
+		await expect(
+			resolver.restoreAsOriginal(memory.file(CONFLICT), ORIGINAL),
+		).rejects.toThrow("already exists");
+		expect(memory.content(CONFLICT)).toBe("remote");
+	});
+
 	it("refuses to overwrite an existing file", async () => {
 		const { memory, resolver } = setup();
 

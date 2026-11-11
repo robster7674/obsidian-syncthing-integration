@@ -58,9 +58,16 @@ export class ConflictResolver {
 
 	/**
 	 * For a conflict whose original no longer exists: the conflict takes the original's path.
+	 * Refuses when anything is at that path, including a file outside the vault index or one differing only in case.
 	 */
 	async restoreAsOriginal(conflict: TFile, originalPath: string): Promise<void> {
-		if (this.app.vault.getAbstractFileByPath(originalPath)) {
+		const folded = originalPath.toLowerCase();
+		const taken =
+			this.app.vault
+				.getFiles()
+				.some((file) => file.path.toLowerCase() === folded) ||
+			(await this.app.vault.adapter.exists(originalPath));
+		if (taken) {
 			throw new Error(`${originalPath} already exists.`);
 		}
 		await this.app.fileManager.renameFile(conflict, originalPath);
