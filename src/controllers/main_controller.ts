@@ -124,7 +124,7 @@ export class SyncthingController {
 
 	/**
 	 * Gets the Syncthing conflicting files for the ConflictsModal,
-	 * grouped by the path of their original file and sorted from most recent.
+	 * grouped by the path of their original file. The list sorts them for display.
 	 * Files that contain `.sync-conflict-` but are not named the way Syncthing names conflicts are returned apart.
 	 * @see https://docs.syncthing.net/users/syncing.html#conflicting-changes
 	 */
@@ -144,9 +144,6 @@ export class SyncthingController {
 			const group = conflicts.get(originalPath) ?? [];
 			group.push(file);
 			conflicts.set(originalPath, group);
-		}
-		for (const group of conflicts.values()) {
-			group.sort((a, b) => sortByConflictDate(a, b));
 		}
 		return { conflicts, unrecognised };
 	}

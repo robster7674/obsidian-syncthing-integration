@@ -40,6 +40,12 @@ describe("isConflictFilename", () => {
 		expect(isConflictFilename("Note.md")).toBe(false);
 	});
 
+	it("agrees with parseConflictFilename on invalid dates", () => {
+		expect(
+			isConflictFilename("Note.sync-conflict-20241399-250000-ABCDEFG.md"),
+		).toBe(false);
+	});
+
 	it("returns false when parts are missing", () => {
 		expect(isConflictFilename("Note.sync-conflict.md")).toBe(false);
 		expect(isConflictFilename("Note.sync-conflict-20210930.md")).toBe(false);

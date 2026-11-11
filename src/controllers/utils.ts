@@ -157,7 +157,7 @@ function parseLocalDateTime(date: string, time: string): Date | undefined {
  * @param filename The file name (not the basename) to check.
  */
 export function isConflictFilename(filename: string): boolean {
-	return SYNCTHING_CONFLICT_FILENAME_REGEX.test(filename);
+	return !(parseConflictFilename(filename) instanceof Failure);
 }
 
 /**

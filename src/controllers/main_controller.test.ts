@@ -213,7 +213,7 @@ describe("SyncthingController.getConflictsWithOriginal", () => {
 });
 
 describe("SyncthingController.getConflicts", () => {
-	it("groups conflicts by original path, most recent first", async () => {
+	it("groups conflicts by original path", async () => {
 		const { controller } = makeHarness(vault);
 
 		const { conflicts, unrecognised } = await controller.getConflicts();
@@ -222,7 +222,7 @@ describe("SyncthingController.getConflicts", () => {
 			"b/My Note.md",
 			"b/Note.md",
 		]);
-		expect(conflicts.get("b/Note.md")).toEqual([newerB, olderB]);
+		expect(conflicts.get("b/Note.md")).toEqual([olderB, newerB]);
 		expect(unrecognised).toEqual([]);
 	});
 
