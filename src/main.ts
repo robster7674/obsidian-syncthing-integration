@@ -117,8 +117,9 @@ export default class SyncthingPlugin extends Plugin {
 	 * fields of an earlier version, such as GUI credentials.
 	 */
 	async loadSettings() {
-		const { settings, legacy } = parseSettings(await this.loadData());
+		const { settings, legacy, problem } = parseSettings(await this.loadData());
 		this.settings = settings;
+		if (problem) new Notice(`Syncthing Integration: ${problem}`, 0);
 		if (legacy) await this.saveSettings();
 	}
 

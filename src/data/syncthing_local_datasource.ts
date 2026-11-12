@@ -43,7 +43,6 @@ export class SyncthingFromCLI {
 		return response;
 	}
 
-
 	/**
 	 * Get the API key of Syncthing installation using the CLI.
 	 */

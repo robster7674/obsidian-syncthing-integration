@@ -7,10 +7,8 @@ import {
 } from "./models";
 
 beforeEach(() => {
-	// `fromJSON` logs each parsed folder to the console, and the numeric /
-	// boolean field checks always report an error (see `validateJsonField`).
-	// Silence both to keep the test output readable.
-	vi.spyOn(console, "log").mockImplementation(() => {});
+	// The numeric and boolean field checks always report an error (see
+	// `validateJsonField`). Silence them to keep the test output readable.
 	vi.spyOn(console, "error").mockImplementation(() => {});
 });
 

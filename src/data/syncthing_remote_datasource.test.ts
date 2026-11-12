@@ -94,7 +94,7 @@ describe("SyncthingFromREST.ping", () => {
 		mockRequestUrl.mockResolvedValue(response("CSRF Error", 403));
 
 		await expect(rest.ping()).rejects.toMatchObject({
-			message: expect.stringContaining("refused the API key (HTTP 403)"),
+			message: expect.stringContaining("Access was refused (HTTP 403)"),
 		});
 	});
 
@@ -138,12 +138,36 @@ describe("SyncthingFromREST.ping", () => {
 		expect(log).not.toHaveBeenCalled();
 		expect(error).not.toHaveBeenCalled();
 	});
+
+	it.each([[{}], [null], [{ ping: "nope" }]])(
+		"says the URL is wrong when the JSON is not a ping answer: %j",
+		async (body) => {
+			mockRequestUrl.mockResolvedValue(response(body));
+
+			await expect(rest.ping()).rejects.toMatchObject({
+				message: expect.stringContaining("Check the Syncthing URL"),
+			});
+		},
+	);
+
+	it("says the URL is wrong when a list endpoint does not return a list", async () => {
+		mockRequestUrl.mockResolvedValue(response({}));
+
+		await expect(rest.getAllFolders()).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getDevices()).rejects.toBeInstanceOf(RestFailure);
+	});
 });
 
 describe("endpointUrl", () => {
 	it("joins a base URL with a trailing slash and an endpoint with a query", () => {
 		expect(endpointUrl("https://example.org/st/", "/rest/events?since=4")).toBe(
 			"https://example.org/st/rest/events?since=4",
+		);
+	});
+
+	it("splits the query at its first question mark only", () => {
+		expect(endpointUrl("http://h", "/rest/db/file?folder=a&file=x?y.md")).toBe(
+			"http://h/rest/db/file?folder=a&file=x?y.md",
 		);
 	});
 });

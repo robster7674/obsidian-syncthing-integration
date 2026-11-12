@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Notice, Platform } from "obsidian";
 	import { Failure } from "src/models/failures";
-	import { DEFAULT_BASE_URL, parseBaseUrl } from "src/settings";
+	import { DEFAULT_BASE_URL, parseBaseUrl, sendsKeyInClear } from "src/settings";
 	import { ConfigurationModal } from "src/views/configuration_modal";
 	import { ObsidianLogo, SyncthingLogo } from "src/views/logos";
 	import { type SyncthingSettingTab } from "src/views/settings_tab";
@@ -199,6 +199,11 @@
 		/>
 		{#if baseUrlError}
 			<span class="mod-warning">{baseUrlError}</span>
+		{:else if sendsKeyInClear(baseUrl)}
+			<span class="mod-warning">
+				This URL is not encrypted, so the API key travels over the
+				network in clear text. Use https:// for a remote Syncthing.
+			</span>
 		{/if}
 	</div>
 </ObsidianSettingsItem>

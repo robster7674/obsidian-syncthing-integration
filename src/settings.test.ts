@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { Failure } from "./models/failures";
-import { DEFAULT_BASE_URL, parseBaseUrl, parseSettings } from "./settings";
+import {
+	DEFAULT_BASE_URL,
+	parseBaseUrl,
+	parseSettings,
+	sendsKeyInClear,
+} from "./settings";
 
 describe("parseSettings", () => {
 	it("gives the defaults when nothing was saved", () => {
 		expect(parseSettings(null)).toEqual({
 			settings: { api_key: "", baseUrl: DEFAULT_BASE_URL, devMode: false },
 			legacy: false,
+			problem: undefined,
 		});
 	});
 
@@ -17,7 +23,11 @@ describe("parseSettings", () => {
 			devMode: true,
 		};
 
-		expect(parseSettings(saved)).toEqual({ settings: saved, legacy: false });
+		expect(parseSettings(saved)).toEqual({
+			settings: saved,
+			legacy: false,
+			problem: undefined,
+		});
 	});
 
 	it("converts the address saved by 2.4.0 and drops the GUI credentials", () => {
@@ -40,14 +50,24 @@ describe("parseSettings", () => {
 		expect(legacy).toBe(true);
 	});
 
-	it("turns the old localhost default into 127.0.0.1, as 2.4.0 did on mobile", () => {
+	it("turns 2.4.0's untouched default into Syncthing's default address", () => {
 		const { settings } = parseSettings({
 			configuration: {
 				url: { protocol: "http", ip_address: "localhost", port: 8384 },
 			},
 		});
 
-		expect(settings.baseUrl).toBe("http://127.0.0.1:8384");
+		expect(settings.baseUrl).toBe(DEFAULT_BASE_URL);
+	});
+
+	it("keeps any other localhost address as typed", () => {
+		const { settings } = parseSettings({
+			configuration: {
+				url: { protocol: "http", ip_address: "localhost", port: 8385 },
+			},
+		});
+
+		expect(settings.baseUrl).toBe("http://localhost:8385");
 	});
 
 	it("brackets an IPv6 address saved by 2.4.0", () => {
@@ -58,10 +78,15 @@ describe("parseSettings", () => {
 		expect(settings.baseUrl).toBe("http://[::1]:8384");
 	});
 
-	it("falls back to the default for an unusable saved address", () => {
-		const { settings } = parseSettings({ baseUrl: "ftp://host" });
+	it("replaces an unusable saved address, says so, and asks for a rewrite", () => {
+		const { settings, legacy, problem } = parseSettings({
+			baseUrl: "http://user:pw@host:8384",
+		});
 
 		expect(settings.baseUrl).toBe(DEFAULT_BASE_URL);
+		expect(legacy).toBe(true);
+		expect(problem).toContain("Remove the user name and password");
+		expect(problem).not.toContain("pw");
 	});
 });
 
@@ -72,8 +97,13 @@ describe("parseBaseUrl", () => {
 		);
 	});
 
+	it("gives the default for an empty field", () => {
+		expect(parseBaseUrl("  ")).toBe(DEFAULT_BASE_URL);
+	});
+
 	it.each([
 		["not a url", "is not a URL"],
+		["http://host:8384/?", "cannot have a query"],
 		["ftp://host", "must start with http"],
 		["http://user:pass@host:8384", "Remove the user name and password"],
 		["http://host:8384/?a=1", "cannot have a query"],
@@ -82,5 +112,17 @@ describe("parseBaseUrl", () => {
 
 		expect(result).toBeInstanceOf(Failure);
 		expect((result as Failure).message).toContain(message);
+	});
+});
+
+describe("sendsKeyInClear", () => {
+	it.each([
+		["http://127.0.0.1:8384", false],
+		["http://localhost:8384", false],
+		["http://[::1]:8384", false],
+		["https://example.org/syncthing", false],
+		["http://192.168.1.5:8384", true],
+	])("%s: %s", (url, expected) => {
+		expect(sendsKeyInClear(url)).toBe(expected);
 	});
 });

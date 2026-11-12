@@ -6,8 +6,8 @@ import { SyncthingDeviceModel, SyncthingFolderModel } from "../models/models";
 
 /**
  * REST API of Syncthing.
- * Requests go only to the configured Syncthing URL, and neither the API key
- * nor the responses are logged.
+ * Requests are built only from the configured Syncthing URL, and neither the
+ * API key nor the responses are logged.
  * @see https://docs.syncthing.net/dev/rest.html
  */
 export class SyncthingFromREST {
@@ -19,7 +19,10 @@ export class SyncthingFromREST {
 	 */
 	async ping(): Promise<"pong"> {
 		const response = await this.requestEndpoint("/rest/system/ping");
-		return response.ping;
+		if (!isRecord(response) || response.ping !== "pong") {
+			throw this.notSyncthing();
+		}
+		return "pong";
 	}
 
 	/**
@@ -28,7 +31,8 @@ export class SyncthingFromREST {
 	 */
 	async getAllFolders(): Promise<SyncthingFolderModel[]> {
 		const folders = await this.requestEndpoint("/rest/config/folders");
-		return folders.map((folder: unknown) =>
+		if (!Array.isArray(folders)) throw this.notSyncthing();
+		return folders.map((folder) =>
 			SyncthingFolderModel.fromJSON(JSON.stringify(folder))
 		);
 	}
@@ -54,7 +58,8 @@ export class SyncthingFromREST {
 	 */
 	async getDevices(): Promise<SyncthingDeviceModel[]> {
 		const devices = await this.requestEndpoint("/rest/config/devices");
-		return devices.map((device: unknown) =>
+		if (!Array.isArray(devices)) throw this.notSyncthing();
+		return devices.map((device) =>
 			SyncthingDeviceModel.fromJSON(JSON.stringify(device))
 		);
 	}
@@ -65,7 +70,7 @@ export class SyncthingFromREST {
 	 * @returns the parsed JSON body.
 	 * @throws {RestFailure} with a message saying what to check.
 	 */
-	private async requestEndpoint(endpoint: string) {
+	private async requestEndpoint(endpoint: string): Promise<unknown> {
 		const url = endpointUrl(this.plugin.settings.baseUrl, endpoint);
 		let response: RequestUrlResponse;
 		try {
@@ -84,7 +89,7 @@ export class SyncthingFromREST {
 		}
 		if (response.status === 401 || response.status === 403) {
 			throw new RestFailure(
-				`Syncthing refused the API key (HTTP ${response.status}). Check the API key set on this device.`
+				`Access was refused (HTTP ${response.status}). Check the API key, or the authentication of a reverse proxy in front of Syncthing.`
 			);
 		}
 		if (response.status >= 400) {
@@ -93,13 +98,21 @@ export class SyncthingFromREST {
 			);
 		}
 		try {
-			return response.json;
+			return response.json as unknown;
 		} catch {
-			throw new RestFailure(
-				`${this.plugin.settings.baseUrl} did not answer like Syncthing's REST API. Check the Syncthing URL.`
-			);
+			throw this.notSyncthing();
 		}
 	}
+
+	private notSyncthing(): RestFailure {
+		return new RestFailure(
+			`${this.plugin.settings.baseUrl} did not answer like Syncthing's REST API. Check the Syncthing URL.`
+		);
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }
 
 /**
@@ -108,8 +121,9 @@ export class SyncthingFromREST {
  */
 export function endpointUrl(baseUrl: string, endpoint: string): string {
 	const url = new URL(baseUrl);
-	const [path, query] = endpoint.split("?", 2);
+	const queryStart = endpoint.indexOf("?");
+	const path = queryStart < 0 ? endpoint : endpoint.slice(0, queryStart);
 	url.pathname = url.pathname.replace(/\/+$/, "") + path;
-	url.search = query ?? "";
+	url.search = queryStart < 0 ? "" : endpoint.slice(queryStart + 1);
 	return url.href;
 }

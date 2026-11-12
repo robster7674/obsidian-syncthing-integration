@@ -212,7 +212,6 @@ export class SyncthingController {
 		return this.plugin.settings.api_key;
 	}
 
-
 	/**
 	 * Gets the Syncthing devices.
 	 */

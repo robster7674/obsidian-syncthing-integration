@@ -14,11 +14,13 @@ export interface SyncthingPluginSettings {
  * Reads the settings saved by any version of the plugin.
  * Versions up to 2.4.0 saved the address as `configuration.url` and kept GUI
  * credentials, which are no longer used.
- * @returns the settings, and whether `data` holds fields that saving drops.
+ * @returns the settings, and whether `data` holds fields or values that saving drops.
  */
 export function parseSettings(data: unknown): {
 	settings: SyncthingPluginSettings;
 	legacy: boolean;
+	/** Why a saved value was replaced by its default, for the user. */
+	problem?: string;
 } {
 	const saved = isRecord(data) ? data : {};
 	const settings: SyncthingPluginSettings = {
@@ -26,17 +28,22 @@ export function parseSettings(data: unknown): {
 		baseUrl: DEFAULT_BASE_URL,
 		devMode: saved.devMode === true,
 	};
-	if (typeof saved.baseUrl === "string") {
-		const baseUrl = parseBaseUrl(saved.baseUrl);
-		if (!(baseUrl instanceof Failure)) settings.baseUrl = baseUrl;
-	} else if (isRecord(saved.configuration) && isRecord(saved.configuration.url)) {
-		const baseUrl = legacyBaseUrl(saved.configuration.url);
-		if (!(baseUrl instanceof Failure)) settings.baseUrl = baseUrl;
+	let problem: string | undefined;
+	const baseUrl =
+		typeof saved.baseUrl === "string"
+			? parseBaseUrl(saved.baseUrl)
+			: isRecord(saved.configuration) && isRecord(saved.configuration.url)
+				? legacyBaseUrl(saved.configuration.url)
+				: DEFAULT_BASE_URL;
+	if (baseUrl instanceof Failure) {
+		problem = `The saved Syncthing URL could not be used, so ${DEFAULT_BASE_URL} is used instead. ${baseUrl.message}`;
+	} else {
+		settings.baseUrl = baseUrl;
 	}
-	const legacy = ["configuration", "gui_username", "gui_password"].some(
-		(key) => key in saved,
-	);
-	return { settings, legacy };
+	const legacy =
+		problem !== undefined ||
+		["configuration", "gui_username", "gui_password"].some((key) => key in saved);
+	return { settings, legacy, problem };
 }
 
 /**
@@ -45,11 +52,13 @@ export function parseSettings(data: unknown): {
  * `user:password@` URL would end up in the browser's history.
  */
 export function parseBaseUrl(text: string): string | Failure {
+	const typed = text.trim();
+	if (typed === "") return DEFAULT_BASE_URL;
 	let url: URL;
 	try {
-		url = new URL(text.trim());
+		url = new URL(typed);
 	} catch {
-		return new Failure(`${text} is not a URL, such as ${DEFAULT_BASE_URL}.`);
+		return new Failure(`"${typed}" is not a URL, such as ${DEFAULT_BASE_URL}.`);
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
 		return new Failure("The Syncthing URL must start with http:// or https://.");
@@ -59,23 +68,37 @@ export function parseBaseUrl(text: string): string | Failure {
 			"Remove the user name and password from the Syncthing URL. The plugin uses the API key.",
 		);
 	}
-	if (url.search || url.hash) {
+	if (url.search || url.hash || /[?#]/.test(typed)) {
 		return new Failure("The Syncthing URL cannot have a query or a fragment.");
 	}
-	return url.href.replace(/\/+$/, "");
+	return (url.origin + url.pathname).replace(/\/+$/, "");
 }
 
 /**
- * Earlier versions replaced `localhost` with `127.0.0.1` on mobile when they
- * sent a request; the address is now used as typed, so the migration does it once.
+ * Whether requests to `baseUrl` send the API key unencrypted over a network,
+ * that is over http:// to a host other than this device.
+ */
+export function sendsKeyInClear(baseUrl: string): boolean {
+	const url = new URL(baseUrl);
+	return (
+		url.protocol === "http:" &&
+		!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+	);
+}
+
+/**
+ * Converts the address saved by 2.4.0. Its untouched default,
+ * `http://localhost:8384`, becomes Syncthing's default address
+ * {@link DEFAULT_BASE_URL}, which 2.4.0 already used on mobile; any other
+ * address is kept as typed.
  */
 function legacyBaseUrl(url: Record<string, unknown>): string | Failure {
 	const protocol = url.protocol === "https" ? "https" : "http";
-	const typed = typeof url.ip_address === "string" ? url.ip_address : "";
-	const host = typed === "localhost" ? "127.0.0.1" : typed;
+	const host = typeof url.ip_address === "string" ? url.ip_address : "";
 	const port = typeof url.port === "number" ? `:${url.port}` : "";
 	const bracketed = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-	return parseBaseUrl(`${protocol}://${bracketed}${port}`);
+	const typed = `${protocol}://${bracketed}${port}`;
+	return parseBaseUrl(typed === "http://localhost:8384" ? DEFAULT_BASE_URL : typed);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
