@@ -88,6 +88,10 @@ Each device keeps its own Syncthing URL and API key, because each device runs it
 
 The plugin talks to Syncthing's REST API at the Syncthing URL, `http://127.0.0.1:8384` by default; a Syncthing behind a reverse proxy can be reached with its full URL, such as `https://example.org/syncthing`. "Get API key" reads the key with the Syncthing program. The plugin looks for the syncthing-macos app, then for `syncthing` on the `PATH`; when Obsidian cannot find it, for example in a Snap or Flatpak sandbox or on Windows, set the path to the program in the settings.
 
+### Conflicts
+
+The conflicts list finds Syncthing conflicts from an index of the vault, kept up to date as files change. Binary files and files over 1 MB are compared by their details instead of line by line, and any conflict can be resolved by keeping the original, keeping the conflict or keeping both. Every resolution moves the version it replaces to the trash. With "Look for conflicts in hidden folders" on, the list also searches folders whose names start with a dot, such as `.obsidian` or per-device configuration folders, which Obsidian does not show; Obsidian's trash and Syncthing's own folders are not searched.
+
 ### Sync status
 
 With an API key set, the status bar shows the vault's sync state on desktop: Synced, Syncing *n* items, Changes not scanned, Waiting for *device*, Not on *device* (an offline device that lacks changes), Scanning, Sync paused or Sync error. "Synced" means every device sharing the vault's folder has all of it, as far as this device's Syncthing knows, so it is safe to close Obsidian. Click it, or run "Check whether it is safe to close", to see why. The plugin follows Syncthing's event stream instead of polling, and starts no request while Obsidian's window is hidden. Paused devices, and devices that do not share the folder back, are not counted. After you change a file, the status says "Changes not scanned" until Syncthing has scanned the folder again, which its file watcher does about 10 seconds later by default. The status is followed on desktop; on mobile, the command reads it when you run it.

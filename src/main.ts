@@ -134,7 +134,11 @@ export default class SyncthingPlugin extends Plugin {
 			"syncthing",
 			"Open Syncthing conflict manager modal",
 			() => {
-				new ConflictsModal(this.app, this.syncthingController).open();
+				new ConflictsModal(
+					this.app,
+					this.syncthingController,
+					this.settings.hiddenConflicts,
+				).open();
 			},
 		);
 
@@ -369,6 +373,7 @@ export default class SyncthingPlugin extends Plugin {
 					new ConflictsModal(
 						this.app,
 						this.syncthingController,
+						this.settings.hiddenConflicts,
 					).open();
 				},
 			},
