@@ -3,7 +3,6 @@ import { isRecord } from "src/controllers/utils";
 import { Failure } from "src/models/failures";
 import { parseBaseUrl } from "src/settings";
 import type SyncthingPlugin from "src/main";
-import { type SyncthingDevice } from "src/models/entities";
 import { RestFailure } from "src/models/failures";
 import { SyncthingDeviceModel, SyncthingFolderModel } from "../models/models";
 
@@ -45,17 +44,30 @@ export class SyncthingFromREST {
 	}
 
 	/**
-	 * Get all the folders of Syncthing installation for a specific device using the REST API.
-	 * @param device - The device to get the folders for.
+	 * The ID of the device this Syncthing runs on.
+	 * @see https://docs.syncthing.net/rest/system-status-get.html
 	 */
-	async getFoldersForDevice(
-		device: SyncthingDevice
-	): Promise<SyncthingFolderModel[]> {
-		const folders = await this.getAllFolders();
-		return folders.filter((folder) =>
-			folder.devices.some(
-				(deviceInFolder) => deviceInFolder.deviceID === device.deviceID
-			)
+	async getMyID(): Promise<string> {
+		const status = await this.requestEndpoint("/rest/system/status");
+		if (!isRecord(status) || typeof status.myID !== "string") {
+			throw this.notSyncthing();
+		}
+		return status.myID;
+	}
+
+	/**
+	 * The IDs of the devices this Syncthing is connected to now.
+	 * @see https://docs.syncthing.net/rest/system-connections-get.html
+	 */
+	async getConnectedDevices(): Promise<Set<string>> {
+		const answer = await this.requestEndpoint("/rest/system/connections");
+		if (!isRecord(answer) || !isRecord(answer.connections)) {
+			throw this.notSyncthing();
+		}
+		return new Set(
+			Object.entries(answer.connections)
+				.filter(([, connection]) => isRecord(connection) && connection.connected === true)
+				.map(([id]) => id)
 		);
 	}
 

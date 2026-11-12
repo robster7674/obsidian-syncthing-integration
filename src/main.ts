@@ -319,15 +319,6 @@ export default class SyncthingPlugin extends Plugin {
 					);
 				},
 			},
-			// {
-			// 	id: "syncthing-plugin-documentation",
-			// 	name: "Open online documentation",
-			// 	callback: () => {
-			// 		open(
-			// 			"https://LBF38.github.io/obsidian-syncthing-integration",
-			// 		);
-			// 	},
-			// },
 		];
 
 		for (const command of commands) {

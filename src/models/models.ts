@@ -39,10 +39,6 @@ export class SyncthingFolderModel extends SyncthingFolder {
 			parsedJSON["maxConflicts"]
 		);
 	}
-
-	toJSON(): string {
-		return JSON.stringify(this);
-	}
 }
 
 export class SyncthingDeviceModel extends SyncthingDevice {
@@ -84,10 +80,6 @@ export class SyncthingDeviceModel extends SyncthingDevice {
 			parsedJSON["name"] ?? ""
 		);
 	}
-
-	toJSON(): string {
-		return JSON.stringify(this);
-	}
 }
 
 export class ReducedSyncthingDeviceModel extends ReducedSyncthingDevice {
@@ -97,15 +89,9 @@ export class ReducedSyncthingDeviceModel extends ReducedSyncthingDevice {
 			throw new Error("Error parsing JSON");
 		logErrorIfNotValidJson(parsedJSON, "deviceID", "string");
 		logErrorIfNotValidJson(parsedJSON, "introducedBy", "string");
-		logErrorIfNotValidJson(parsedJSON, "encryptionPassword", "string");
 		return new ReducedSyncthingDeviceModel(
 			parsedJSON["deviceID"],
-			parsedJSON["introducedBy"],
-			parsedJSON["encryptionPassword"]
+			parsedJSON["introducedBy"]
 		);
-	}
-
-	toJSON(): string {
-		throw new Error("Method not implemented.");
 	}
 }

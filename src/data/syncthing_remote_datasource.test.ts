@@ -273,19 +273,34 @@ describe("SyncthingFromREST.getDevices", () => {
 	});
 });
 
-describe("SyncthingFromREST.getFoldersForDevice", () => {
-	it("keeps only the folders shared with the given device", async () => {
-		const folders = readFixtureJson<unknown[]>("folders.json");
-		const devices = readFixtureJson<unknown[]>("devices.json");
-		mockRequestUrl.mockResolvedValue(response(folders));
+describe("SyncthingFromREST status endpoints", () => {
+	it("reads this device's ID", async () => {
+		mockRequestUrl.mockResolvedValue(response({ myID: "AAAAAAA-BBBBBBB" }));
 
-		const device = SyncthingDeviceModel.fromJSON(
-			JSON.stringify(devices[1]),
+		await expect(rest.getMyID()).resolves.toBe("AAAAAAA-BBBBBBB");
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({ url: "http://127.0.0.1:8384/rest/system/status" }),
 		);
-		const result = await rest.getFoldersForDevice(device);
+	});
 
-		expect(result).toHaveLength(1);
-		expect(result[0].id).toBe("default");
+	it("keeps only the devices that are connected now", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({
+				connections: {
+					A: { connected: true },
+					B: { connected: false },
+				},
+				total: {},
+			}),
+		);
+
+		await expect(rest.getConnectedDevices()).resolves.toEqual(new Set(["A"]));
+	});
+
+	it("says the URL is wrong when the answers are not Syncthing's", async () => {
+		mockRequestUrl.mockResolvedValue(response({}));
+
+		await expect(rest.getMyID()).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getConnectedDevices()).rejects.toBeInstanceOf(RestFailure);
 	});
 });
-
