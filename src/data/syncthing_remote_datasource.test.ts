@@ -33,7 +33,7 @@ let plugin: ReturnType<typeof makePlugin>;
 beforeEach(() => {
 	vi.spyOn(console, "log").mockImplementation(() => {});
 	vi.spyOn(console, "error").mockImplementation(() => {});
-	plugin = makePlugin([], { api_key: "test-api-key" });
+	plugin = makePlugin([], { apiKey: "test-api-key" });
 	rest = new SyncthingFromREST(asPlugin(plugin));
 });
 
@@ -63,7 +63,7 @@ describe("SyncthingFromREST.ping", () => {
 	});
 
 	it("keeps the reverse-proxy path of the Syncthing URL", async () => {
-		plugin.settings.baseUrl = "https://example.org/syncthing";
+		plugin.device.baseUrl = "https://example.org/syncthing";
 		mockRequestUrl.mockResolvedValue(response({ ping: "pong" }));
 
 		await rest.ping();
@@ -127,7 +127,7 @@ describe("SyncthingFromREST.ping", () => {
 	});
 
 	it("refuses an unusable Syncthing URL without sending anything", async () => {
-		plugin.settings.baseUrl = "http://user:pw@host:8384";
+		plugin.device.baseUrl = "http://user:pw@host:8384";
 
 		await expect(rest.ping()).rejects.toMatchObject({
 			message: expect.stringContaining("cannot be used"),

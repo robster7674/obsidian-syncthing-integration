@@ -4,50 +4,89 @@ import { Failure } from "./models/failures";
 /** Syncthing's default GUI and REST API address. */
 export const DEFAULT_BASE_URL = "http://127.0.0.1:8384";
 
+/** The secret holding this device's Syncthing API key in Obsidian's keychain. */
+export const API_KEY_SECRET = "syncthing-integration-api-key";
+/** The key of {@link DeviceSettings} in the vault's local storage on this device. */
+export const DEVICE_SETTINGS_KEY = "syncthing-integration-device";
+
+/** Settings saved in `data.json`, which syncs with the vault. */
 export interface SyncthingPluginSettings {
-	api_key: string;
-	/** Where Syncthing's GUI and REST API are served, including any reverse-proxy path. */
-	baseUrl: string;
 	devMode: boolean;
 }
 
 /**
+ * Settings of the Syncthing on this device. They are kept out of `data.json`,
+ * so that each device reaches its own Syncthing, as is the API key.
+ */
+export interface DeviceSettings {
+	/** Where Syncthing's GUI and REST API are served, including any reverse-proxy path. */
+	baseUrl: string;
+}
+
+/** Fields of 2.4.0 that other devices may still need to take over their settings. */
+const SHARED_FIELDS = ["api_key", "baseUrl", "configuration"];
+/** Fields of 2.4.0 that nothing uses any more. */
+const DROPPED_FIELDS = ["gui_username", "gui_password"];
+
+/**
  * Reads the settings saved by any version of the plugin.
- * Versions up to 2.4.0 saved the address as `configuration.url` and kept GUI
- * credentials, which are no longer used.
- * @returns the settings, and whether `data` holds fields that saving drops.
+ * Up to 2.4.0, `data.json` held the API key, the address as
+ * `configuration.url`, and GUI credentials, which are no longer used.
+ * The key and address are kept in `data.json` until the user removes them,
+ * so that every device can take them over when it updates.
  * A saved address that cannot be used is kept as it was, so nothing the user
  * typed is lost, and `problem` says why; requests refuse it until it is fixed.
+ * @param data the content of `data.json`.
+ * @param storedDevice what this device stored under {@link DEVICE_SETTINGS_KEY}.
  */
-export function parseSettings(data: unknown): {
+export function parseSettings(
+	data: unknown,
+	storedDevice: unknown,
+): {
 	settings: SyncthingPluginSettings;
-	legacy: boolean;
-	/** Why a saved value was replaced by its default, for the user. */
+	device: DeviceSettings;
+	/**
+	 * Whether this device has not stored settings of its own yet and should
+	 * take over the ones 2.4.0 shared in `data.json`. Once it has stored them,
+	 * it ignores the shared ones, even when the user cleared its API key.
+	 */
+	takeOver: boolean;
+	/** The API key 2.4.0 left in `data.json`, which belongs in the keychain. */
+	sharedApiKey?: string;
+	/** The fields of 2.4.0 to keep in `data.json` for other devices. */
+	shared: Record<string, unknown>;
+	/** Whether `data.json` holds fields that saving drops. */
+	rewrite: boolean;
+	/** Why a saved value cannot be used, for the user. */
 	problem?: string;
 } {
 	const saved = isRecord(data) ? data : {};
-	const settings: SyncthingPluginSettings = {
-		api_key: typeof saved.api_key === "string" ? saved.api_key : "",
-		baseUrl: DEFAULT_BASE_URL,
-		devMode: saved.devMode === true,
-	};
+	const takeOver =
+		!isRecord(storedDevice) && SHARED_FIELDS.some((key) => key in saved);
+	const source = isRecord(storedDevice) ? storedDevice : saved;
 	const { typed, parsed } =
-		typeof saved.baseUrl === "string"
-			? { typed: saved.baseUrl, parsed: parseBaseUrl(saved.baseUrl) }
-			: isRecord(saved.configuration) && isRecord(saved.configuration.url)
-				? legacyBaseUrl(saved.configuration.url)
+		typeof source.baseUrl === "string"
+			? { typed: source.baseUrl, parsed: parseBaseUrl(source.baseUrl) }
+			: isRecord(source.configuration) && isRecord(source.configuration.url)
+				? legacyBaseUrl(source.configuration.url)
 				: { typed: DEFAULT_BASE_URL, parsed: DEFAULT_BASE_URL };
-	let problem: string | undefined;
-	if (parsed instanceof Failure) {
-		settings.baseUrl = typed;
-		problem = `The saved Syncthing URL cannot be used. ${parsed.message} Set it again in the plugin settings.`;
-	} else {
-		settings.baseUrl = parsed;
-	}
-	const legacy = ["configuration", "gui_username", "gui_password"].some(
-		(key) => key in saved,
-	);
-	return { settings, legacy, problem };
+	return {
+		settings: { devMode: saved.devMode === true },
+		device: { baseUrl: parsed instanceof Failure ? typed : parsed },
+		takeOver,
+		sharedApiKey:
+			typeof saved.api_key === "string" && saved.api_key !== ""
+				? saved.api_key
+				: undefined,
+		shared: Object.fromEntries(
+			SHARED_FIELDS.filter((key) => key in saved).map((key) => [key, saved[key]]),
+		),
+		rewrite: DROPPED_FIELDS.some((key) => key in saved),
+		problem:
+			parsed instanceof Failure
+				? `The saved Syncthing URL cannot be used. ${parsed.message} Set it again in the plugin settings.`
+				: undefined,
+	};
 }
 
 /**
