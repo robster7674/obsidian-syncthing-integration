@@ -12,6 +12,7 @@ import {
 	Failure,
 	MissingOriginalFailure,
 } from "src/models/failures";
+import { ConflictIndex } from "./conflict_index";
 import { findVaultFolder, vaultBasePath, type VaultFolder } from "./vault_folder";
 import {
 	originalPathOf,
@@ -39,7 +40,12 @@ export class SyncthingController {
 		 * @see https://docs.obsidian.md/Reference/TypeScript+API/Plugin/Plugin
 		 */
 		public plugin: SyncthingPlugin,
-	) {}
+	) {
+		this.conflictIndex = new ConflictIndex(plugin.app.vault);
+	}
+
+	/** The vault's conflicts, which the plugin keeps up to date from vault events. */
+	conflictIndex: ConflictIndex;
 
 	/**
 	 * Gets the Syncthing CLI status.
@@ -100,20 +106,7 @@ export class SyncthingController {
 		conflicts: Map<string, TFile[]>;
 		unrecognised: TFile[];
 	}> {
-		const conflicts = new Map<string, TFile[]>();
-		const unrecognised: TFile[] = [];
-		for (const file of this.plugin.app.vault.getFiles()) {
-			if (!file.name.contains(".sync-conflict-")) continue;
-			const originalPath = originalPathOf(file);
-			if (originalPath instanceof Failure) {
-				unrecognised.push(file);
-				continue;
-			}
-			const group = conflicts.get(originalPath) ?? [];
-			group.push(file);
-			conflicts.set(originalPath, group);
-		}
-		return { conflicts, unrecognised };
+		return this.conflictIndex.all();
 	}
 
 	/**
@@ -156,13 +149,7 @@ export class SyncthingController {
 	}
 
 	private findConflictsOf(originalPath: string): TFile[] {
-		return this.plugin.app.vault
-			.getFiles()
-			.filter(
-				(file) =>
-					file.name.contains(".sync-conflict-") &&
-					originalPathOf(file) === originalPath,
-			);
+		return this.conflictIndex.conflictsOf(originalPath);
 	}
 
 	private findFile(path: string): TFile | undefined {

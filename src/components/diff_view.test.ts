@@ -199,4 +199,50 @@ describe("diff_view.svelte", () => {
 		expect(modal.conflictingFiles).toHaveLength(1);
 		expect(modal.close).not.toHaveBeenCalled();
 	});
+
+	it("compares binary files by their details only, and can keep both", async () => {
+		const memory = makeMemoryVault({
+			"b/photo.png": new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00]),
+			"b/photo.sync-conflict-20220101-000000-BBBBBBB.png": new Uint8Array([0x89, 0x00, 0x01]),
+		});
+		const conflict = memory.file("b/photo.sync-conflict-20220101-000000-BBBBBBB.png");
+		const modal = {
+			app: memory.app,
+			titleEl: document.createElement("div"),
+			originalFile: memory.file("b/photo.png"),
+			conflictingFiles: [conflict],
+			conflictingFilesProperties: new Map([
+				[
+					conflict,
+					{
+						filename: "photo",
+						date: "20220101",
+						time: "000000",
+						dateTime: new Date(2022, 0, 1),
+						modifiedBy: "BBBBBBB",
+						extension: "png",
+						originalName: "photo.png",
+					},
+				],
+			]),
+			close: vi.fn(),
+		} as unknown as DiffModal;
+		const { container } = render(DiffView, { props: { parentModal: modal } });
+		const button = (text: string) =>
+			Array.from(container.querySelectorAll("button")).find((b) =>
+				b.textContent?.includes(text),
+			) as HTMLButtonElement | undefined;
+
+		await waitFor(() => expect(container.textContent).toContain("not a text file"));
+		expect(button("Open in Merge Editor")).toBeUndefined();
+		expect(memory.app.vault.read).not.toHaveBeenCalled();
+		expect(memory.app.vault.cachedRead).not.toHaveBeenCalled();
+
+		await fireEvent.click(button("Keep both")!);
+
+		await waitFor(() => expect(modal.close).toHaveBeenCalled());
+		expect(memory.bytes("b/photo (conflict from BBBBBBB, 2022-01-01 000000).png")).toEqual(
+			new Uint8Array([0x89, 0x00, 0x01]),
+		);
+	});
 });
