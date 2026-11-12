@@ -82,7 +82,7 @@ export class SyncthingFromREST {
 	 * @throws {RestFailure} with a message saying what to check.
 	 */
 	private async requestEndpoint(endpoint: string): Promise<unknown> {
-		const baseUrl = parseBaseUrl(this.plugin.settings.baseUrl);
+		const baseUrl = parseBaseUrl(this.plugin.device.baseUrl);
 		if (baseUrl instanceof Failure) {
 			throw new RestFailure(
 				`The Syncthing URL cannot be used. ${baseUrl.message}`
@@ -94,7 +94,7 @@ export class SyncthingFromREST {
 			response = await requestUrl({
 				url,
 				method: "GET",
-				headers: { "X-API-Key": this.plugin.settings.api_key },
+				headers: { "X-API-Key": this.plugin.getApiKey() },
 				throw: false,
 			});
 		} catch (error) {
@@ -123,7 +123,7 @@ export class SyncthingFromREST {
 
 	private notSyncthing(): RestFailure {
 		return new RestFailure(
-			`${this.plugin.settings.baseUrl} did not answer like Syncthing's REST API. Check the Syncthing URL.`
+			`${this.plugin.device.baseUrl} did not answer like Syncthing's REST API. Check the Syncthing URL.`
 		);
 	}
 }

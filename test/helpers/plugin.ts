@@ -8,9 +8,17 @@
 import { vi } from "vitest";
 import type { App, TFile } from "obsidian";
 import type SyncthingPlugin from "src/main";
-import { DEFAULT_BASE_URL, type SyncthingPluginSettings } from "src/settings";
+import {
+	DEFAULT_BASE_URL,
+	type DeviceSettings,
+	type SyncthingPluginSettings,
+} from "src/settings";
 
-export type FakePluginSettings = Partial<SyncthingPluginSettings>;
+export interface FakePluginSettings {
+	apiKey?: string;
+	baseUrl?: string;
+	devMode?: boolean;
+}
 
 /** A vault whose methods are Vitest mocks. */
 export interface FakeVault {
@@ -25,7 +33,12 @@ export interface FakeVault {
 export interface FakePlugin {
 	app: App;
 	vault: FakeVault;
-	settings: FakePluginSettings;
+	settings: SyncthingPluginSettings;
+	device: DeviceSettings;
+	apiKey: string;
+	getApiKey: () => string;
+	setApiKey: ReturnType<typeof vi.fn>;
+	saveDeviceSettings: ReturnType<typeof vi.fn>;
 	saveSettings: ReturnType<typeof vi.fn>;
 	loadData: ReturnType<typeof vi.fn>;
 	saveData: ReturnType<typeof vi.fn>;
@@ -57,19 +70,22 @@ export function makePlugin(
 		},
 	} as unknown as App;
 
-	return {
+	const plugin: FakePlugin = {
 		app,
 		vault,
-		settings: {
-			api_key: "",
-			baseUrl: DEFAULT_BASE_URL,
-			devMode: false,
-			...settings,
-		},
+		settings: { devMode: settings.devMode ?? false },
+		device: { baseUrl: settings.baseUrl ?? DEFAULT_BASE_URL },
+		apiKey: settings.apiKey ?? "",
+		getApiKey: () => plugin.apiKey,
+		setApiKey: vi.fn((key: string) => {
+			plugin.apiKey = key;
+		}),
+		saveDeviceSettings: vi.fn(),
 		saveSettings: vi.fn(async () => undefined),
 		loadData: vi.fn(async () => null),
 		saveData: vi.fn(async () => undefined),
 	};
+	return plugin;
 }
 
 /**
