@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Notice, Platform } from "obsidian";
 	import { Failure } from "src/models/failures";
+	import { DEFAULT_BASE_URL, parseBaseUrl } from "src/settings";
 	import { ConfigurationModal } from "src/views/configuration_modal";
 	import { ObsidianLogo, SyncthingLogo } from "src/views/logos";
 	import { type SyncthingSettingTab } from "src/views/settings_tab";
@@ -12,8 +13,8 @@
 	export let parent: SyncthingSettingTab;
 	let hasSyncthing = true;
 	let apiInputType = "password";
-	let guiPasswordInputType = "password";
-	let syncthingBaseUrl = "";
+	let baseUrl = parent.plugin.settings.baseUrl;
+	let baseUrlError = "";
 
 	onMount(async () => {
 		hasSyncthing = await parent.syncthingController.hasSyncthing();
@@ -29,7 +30,18 @@
 			parent.plugin.saveSettings();
 		});
 	}
-	$: syncthingBaseUrl = `${parent.plugin.settings.configuration.url?.protocol}://${parent.plugin.settings.configuration.url?.ip_address}:${parent.plugin.settings.configuration.url?.port}`;
+
+	async function setBaseUrl(text: string) {
+		const parsed = parseBaseUrl(text);
+		if (parsed instanceof Failure) {
+			baseUrlError = parsed.message;
+			return;
+		}
+		baseUrlError = "";
+		baseUrl = parsed;
+		parent.plugin.settings.baseUrl = parsed;
+		await parent.plugin.saveSettings();
+	}
 </script>
 
 <!-- Banner -->
@@ -132,7 +144,6 @@
 						new Notice(`Syncthing Ping : ${status}`);
 					})
 					.catch((error) => {
-						console.log("settings tab error: ", error);
 						new Notice((error as Error).message);
 					});
 			}}
@@ -172,173 +183,35 @@
 	/>
 {/if}
 
-<!-- GUI Setting -->
-<ObsidianSettingsItem name="Syncthing base URL" heading={true} />
+<!-- Syncthing URL -->
+<ObsidianSettingsItem name="Syncthing URL" heading={true} />
 <ObsidianSettingsItem
-	name="Set the Syncthing base URL"
-	description="Please set your Syncthing base URL here. This address will be used to open the Syncthing GUI in your browser and to make API requests."
+	name="Syncthing URL"
+	description="Where Syncthing's GUI is served, including any reverse-proxy path, for example https://example.org/syncthing. The plugin sends its API requests there."
 >
-	<div
-		slot="control"
-		style="display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;"
-	>
-		<div style="display: flex; align-items: center;">
-			<select
-				style="border-radius: var(--input-radius) 0 0 var(--input-radius);"
-				value={parent.plugin.settings.configuration.url?.protocol ?? ""}
-				on:change={async (event) => {
-					console.log(
-						"select change: ",
-						event,
-						event.currentTarget.value,
-					);
-					if (!parent.plugin.settings.configuration.url) {
-						parent.plugin.settings.configuration.url = {
-							protocol: "http",
-							ip_address: "localhost",
-							port: 8384,
-						};
-					}
-					if (
-						event.currentTarget.value === "http" ||
-						event.currentTarget.value === "https"
-					)
-						parent.plugin.settings.configuration.url.protocol =
-							event.currentTarget.value;
-					await parent.plugin.saveSettings();
-				}}
-			>
-				<option value="http"> http://</option>
-				<option value="https"> https://</option>
-			</select>
-
-			<input
-				type="text"
-				placeholder="Enter your Syncthing address here..."
-				value={parent.plugin.settings.configuration.url?.ip_address ??
-					""}
-				on:change={async (event) => {
-					console.log(
-						"ip address change: ",
-						event,
-						event.currentTarget.value,
-					);
-					const valueChange = event.currentTarget.value;
-					if (!parent.plugin.settings.configuration.url) {
-						parent.plugin.settings.configuration.url = {
-							protocol: "http",
-							ip_address: "localhost",
-							port: 8384,
-						};
-					}
-					parent.plugin.settings.configuration.url.ip_address =
-						valueChange === "" || !valueChange
-							? "localhost"
-							: valueChange;
-					await parent.plugin.saveSettings();
-				}}
-				style="border-radius: 0;"
-			/>
-			<input
-				type="number"
-				placeholder="Enter the port..."
-				value={parent.plugin.settings.configuration.url?.port ?? ""}
-				on:change={async (event) => {
-					console.log(
-						"port change: ",
-						event,
-						event.currentTarget.value,
-					);
-					const valueChange = event.currentTarget.value;
-					if (!parent.plugin.settings.configuration.url) {
-						parent.plugin.settings.configuration.url = {
-							protocol: "http",
-							ip_address: "localhost",
-							port: 8384,
-						};
-					}
-					parent.plugin.settings.configuration.url.port =
-						isNaN(parseInt(valueChange)) || !valueChange
-							? 8384
-							: parseInt(valueChange);
-					await parent.plugin.saveSettings();
-				}}
-				style="border-radius: 0 var(--input-radius) var(--input-radius) 0;"
-			/>
-		</div>
-		<input style="margin: 2% 0;" value={syncthingBaseUrl} disabled />
+	<div slot="control" class="base-url">
+		<input
+			type="url"
+			placeholder={DEFAULT_BASE_URL}
+			value={baseUrl}
+			aria-invalid={baseUrlError !== ""}
+			on:change={(event) => setBaseUrl(event.currentTarget.value)}
+		/>
+		{#if baseUrlError}
+			<span class="mod-warning">{baseUrlError}</span>
+		{/if}
 	</div>
 </ObsidianSettingsItem>
 <ObsidianSettingsItem
-	name="Set GUI Credentials"
-	description="Please set your Syncthing GUI credentials here. These credentials will be used to open the Syncthing GUI in your browser."
->
-	<svelte:fragment slot="control">
-		<input
-			type="text"
-			placeholder="Enter your GUI username..."
-			id="gui-username"
-			bind:value={parent.plugin.settings.gui_username}
-			on:change={async (event) => {
-				parent.plugin.settings.gui_username = event.currentTarget.value;
-				await parent.plugin.saveSettings();
-			}}
-			required={Platform.isMobileApp}
-		/>
-		<input
-			type={guiPasswordInputType}
-			placeholder="Enter your GUI password..."
-			id="gui-password"
-			value={parent.plugin.settings.gui_password ?? ""}
-			on:change={async (event) => {
-				parent.plugin.settings.gui_password = event.currentTarget.value;
-				await parent.plugin.saveSettings();
-			}}
-			required={Platform.isMobileApp}
-		/>
-		<button
-			on:click={() => {
-				guiPasswordInputType =
-					guiPasswordInputType === "password" ? "text" : "password";
-			}}
-		>
-			{#if guiPasswordInputType === "password"}
-				<ObsidianLucideIcon name="eye" />
-			{:else}
-				<ObsidianLucideIcon name="eye-off" />
-			{/if}
-		</button>
-	</svelte:fragment>
-</ObsidianSettingsItem>
-<ObsidianSettingsItem
 	name="Open Syncthing GUI"
-	description="Open the Syncthing GUI in your browser."
+	description="Open the Syncthing GUI in your browser. If the GUI asks for a user name and password, enter them there."
 >
 	<button
 		slot="control"
 		class="mod-cta"
-		on:click={async () => {
-			if (
-				(!parent.plugin.settings.gui_username ||
-					!parent.plugin.settings.gui_password) &&
-				Platform.isMobileApp
-			) {
-				new Notice(
-					"Please set your GUI credentials first. There are needed on mobile app.",
-				);
-				return;
-			}
-			let url;
-			if (
-				parent.plugin.settings.gui_username &&
-				parent.plugin.settings.gui_password
-			) {
-				url = `${parent.plugin.settings.configuration.url?.protocol}://${parent.plugin.settings.gui_username}:${parent.plugin.settings.gui_password}@${parent.plugin.settings.configuration.url?.ip_address}:${parent.plugin.settings.configuration.url?.port}`;
-			} else {
-				url = syncthingBaseUrl;
-			}
+		on:click={() => {
 			// eslint-disable-next-line no-undef
-			open(url);
+			open(parent.plugin.settings.baseUrl);
 		}}
 	>
 		<ObsidianLucideIcon name="link" />
@@ -465,6 +338,12 @@
 	}
 	.banner img {
 		height: 2em;
+	}
+	.base-url {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.25em;
 	}
 	.footer {
 		display: flex;

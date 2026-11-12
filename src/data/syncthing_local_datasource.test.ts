@@ -3,8 +3,6 @@ import type * as UtilModule from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
 import { CliFailure } from "src/models/failures";
-import { SyncthingConfigurationModel } from "../models/models";
-import { readFixture } from "../../test/helpers/fixtures";
 import { SyncthingFromCLI } from "./syncthing_local_datasource";
 
 /**
@@ -109,19 +107,6 @@ describe("SyncthingFromCLI.getVersion", () => {
 		await cli.getVersion();
 
 		expect(lastCommand).toBe("syncthing --version");
-	});
-});
-
-describe("SyncthingFromCLI.getConfiguration", () => {
-	it("parses the configuration returned by the CLI", async () => {
-		stdout = readFixture("config.json");
-
-		const config = await cli.getConfiguration();
-
-		expect(config).toBeInstanceOf(SyncthingConfigurationModel);
-		expect(config.version).toBe("37");
-		expect(config.folders).toHaveLength(2);
-		expect(lastCommand).toBe("syncthing cli config dump-json");
 	});
 });
 

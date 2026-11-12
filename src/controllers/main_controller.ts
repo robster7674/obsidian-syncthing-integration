@@ -4,7 +4,6 @@ import { type SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import { type SyncthingFromREST } from "src/data/syncthing_remote_datasource";
 import type SyncthingPlugin from "src/main";
 import {
-	type SyncthingConfiguration,
 	type SyncthingDevice,
 	type SyncthingFolder,
 	type ConflictFilename,
@@ -13,7 +12,6 @@ import {
 	CliFailure,
 	Failure,
 	MissingOriginalFailure,
-	RestFailure,
 } from "src/models/failures";
 import {
 	originalPathOf,
@@ -46,23 +44,6 @@ export class SyncthingController {
 		 */
 		public plugin: SyncthingPlugin,
 	) {}
-
-	/**
-	 * Checks if Syncthing is running.
-	 */
-	async isRunning(): Promise<boolean> {
-		console.log("isRunning");
-		return this.syncthingFromREST
-			.ping()
-			.then((response) => {
-				console.log(response);
-				return true;
-			})
-			.catch((error) => {
-				console.log(error);
-				return false;
-			});
-	}
 
 	/**
 	 * Gets the Syncthing CLI status.
@@ -231,24 +212,6 @@ export class SyncthingController {
 		return this.plugin.settings.api_key;
 	}
 
-	/**
-	 * Gets the Syncthing configuration.
-	 */
-	async getConfiguration(): Promise<SyncthingConfiguration | Failure> {
-		if (!(await this.isRunning()))
-			return new Failure("Syncthing is not running.");
-		try {
-			const config = await this.syncthingFromREST.getConfiguration();
-			return config;
-		} catch (error) {
-			if (Platform.isMobileApp) {
-				console.error(error);
-				return new RestFailure();
-			}
-			const config = await this.syncthingFromCLI.getConfiguration();
-			return config;
-		}
-	}
 
 	/**
 	 * Gets the Syncthing devices.

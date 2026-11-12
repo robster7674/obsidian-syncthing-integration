@@ -13,8 +13,6 @@
 	parent.titleEl.setText("Syncthing Configuration");
 	parent.titleEl.style.textAlign = "center";
 
-	let syncthingBaseUrl = `${parent.plugin.settings.configuration.url?.protocol}://${parent.plugin.settings.configuration.url?.ip_address}:${parent.plugin.settings.configuration.url?.port}/`;
-	console.log(syncthingBaseUrl);
 	// TODO: refactor this to use Svelte stores.
 	let folders: SyncthingFolder[] = [];
 	let devices: SyncthingDevice[] = [];
@@ -23,8 +21,6 @@
 		folders = await parent.plugin.syncthingController.getFolders();
 		devices = await parent.plugin.syncthingController.getDevices();
 		thisDevice = devices.first();
-		console.log("Folders: ", folders);
-		console.log("Devices: ", devices);
 	});
 </script>
 

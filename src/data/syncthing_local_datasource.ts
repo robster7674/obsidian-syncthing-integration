@@ -1,4 +1,3 @@
-import { SyncthingConfigurationModel } from "../models/models";
 import { CliFailure } from "src/models/failures";
 import { Platform } from "obsidian";
 
@@ -44,17 +43,6 @@ export class SyncthingFromCLI {
 		return response;
 	}
 
-	/**
-	 * Get the configuration of Syncthing installation using the CLI.
-	 */
-	async getConfiguration(): Promise<SyncthingConfigurationModel> {
-		const commandToGetConfig = "syncthing cli config dump-json";
-		const response = await this.runSyncthingCommand(commandToGetConfig);
-		if (response instanceof Error) {
-			throw new CliFailure(response.message);
-		}
-		return SyncthingConfigurationModel.fromJSON(response);
-	}
 
 	/**
 	 * Get the API key of Syncthing installation using the CLI.

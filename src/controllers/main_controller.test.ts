@@ -5,12 +5,10 @@ import type { SyncthingFromAndroid } from "src/data/syncthing_android_datasource
 import type { SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import type { SyncthingFromREST } from "src/data/syncthing_remote_datasource";
 import type SyncthingPlugin from "src/main";
-import type { SyncthingConfiguration } from "src/models/entities";
 import {
 	CliFailure,
 	Failure,
 	MissingOriginalFailure,
-	RestFailure,
 } from "src/models/failures";
 import { makeConflictFile, makeFile } from "../../test/helpers/files";
 import {
@@ -24,14 +22,12 @@ interface ControllerHarness {
 	controller: SyncthingController;
 	cli: {
 		getVersion: Mock;
-		getConfiguration: Mock;
 		getAPIkey: Mock;
 		startSyncthing: Mock;
 		stopSyncthing: Mock;
 	};
 	rest: {
 		ping: Mock;
-		getConfiguration: Mock;
 		getDevices: Mock;
 		getAllFolders: Mock;
 	};
@@ -42,14 +38,12 @@ interface ControllerHarness {
 function makeHarness(files: TFile[] = [], settings = {}): ControllerHarness {
 	const cli = {
 		getVersion: vi.fn(),
-		getConfiguration: vi.fn(),
 		getAPIkey: vi.fn(),
 		startSyncthing: vi.fn(),
 		stopSyncthing: vi.fn(),
 	};
 	const rest = {
 		ping: vi.fn(),
-		getConfiguration: vi.fn(),
 		getDevices: vi.fn(),
 		getAllFolders: vi.fn(),
 	};
@@ -64,13 +58,6 @@ function makeHarness(files: TFile[] = [], settings = {}): ControllerHarness {
 	return { controller, cli, rest, android, plugin };
 }
 
-const CONFIG = {
-	version: "37",
-	folders: [],
-	devices: [],
-	url: { protocol: "http", ip_address: "localhost", port: 8384 },
-} as unknown as SyncthingConfiguration;
-
 beforeEach(() => {
 	vi.spyOn(console, "log").mockImplementation(() => {});
 	vi.spyOn(console, "error").mockImplementation(() => {});
@@ -78,22 +65,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
-});
-
-describe("SyncthingController.isRunning", () => {
-	it("returns true when the REST ping succeeds", async () => {
-		const { controller, rest } = makeHarness();
-		rest.ping.mockResolvedValue("pong");
-
-		await expect(controller.isRunning()).resolves.toBe(true);
-	});
-
-	it("returns false when the REST ping fails", async () => {
-		const { controller, rest } = makeHarness();
-		rest.ping.mockRejectedValue(new Error("offline"));
-
-		await expect(controller.isRunning()).resolves.toBe(false);
-	});
 });
 
 describe("SyncthingController status helpers", () => {
@@ -332,47 +303,6 @@ describe("SyncthingController.getAPIKey", () => {
 		cli.getAPIkey.mockRejectedValue(new Error("boom"));
 
 		await expect(controller.getAPIKey()).resolves.toBeInstanceOf(CliFailure);
-	});
-});
-
-describe("SyncthingController.getConfiguration", () => {
-	it("fails when Syncthing is not running", async () => {
-		const { controller, rest } = makeHarness();
-		rest.ping.mockRejectedValue(new Error("offline"));
-
-		const result = await controller.getConfiguration();
-
-		expect(result).toBeInstanceOf(Failure);
-	});
-
-	it("returns the REST configuration when available", async () => {
-		const { controller, rest } = makeHarness();
-		rest.ping.mockResolvedValue("pong");
-		rest.getConfiguration.mockResolvedValue(CONFIG);
-
-		await expect(controller.getConfiguration()).resolves.toBe(CONFIG);
-	});
-
-	it("falls back to the CLI when the REST call fails on desktop", async () => {
-		const { controller, rest, cli } = makeHarness();
-		rest.ping.mockResolvedValue("pong");
-		rest.getConfiguration.mockRejectedValue(new Error("rest error"));
-		cli.getConfiguration.mockResolvedValue(CONFIG);
-
-		await expect(controller.getConfiguration()).resolves.toBe(CONFIG);
-		expect(cli.getConfiguration).toHaveBeenCalled();
-	});
-
-	it("returns a RestFailure on mobile when the REST call fails", async () => {
-		Platform.isMobileApp = true;
-		const { controller, rest, cli } = makeHarness();
-		rest.ping.mockResolvedValue("pong");
-		rest.getConfiguration.mockRejectedValue(new Error("rest error"));
-
-		const result = await controller.getConfiguration();
-
-		expect(result).toBeInstanceOf(RestFailure);
-		expect(cli.getConfiguration).not.toHaveBeenCalled();
 	});
 });
 
