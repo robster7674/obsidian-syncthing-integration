@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { Notice, Platform } from "obsidian";
+	import { type VaultFolder } from "src/controllers/vault_folder";
+	import { type SyncthingFolder } from "src/models/entities";
 	import { Failure } from "src/models/failures";
 	import {
 		ANDROID_BASE_URL,
@@ -21,6 +23,42 @@
 	let baseUrl = parent.plugin.device.baseUrl;
 	const savedUrl = parseBaseUrl(baseUrl);
 	let baseUrlError = savedUrl instanceof Failure ? savedUrl.message : "";
+
+	let folders: SyncthingFolder[] = [];
+	let vaultFolder: VaultFolder | Failure | undefined;
+	let folderId = parent.plugin.device.folderId;
+
+	let folderRequest = 0;
+
+	/** Asks Syncthing for its folders; only the latest request's answer is kept. */
+	async function findFolder() {
+		const request = ++folderRequest;
+		vaultFolder = undefined;
+		try {
+			const found = await parent.syncthingController.getVaultFolder();
+			if (request !== folderRequest) return;
+			({ folders, vaultFolder } = found);
+		} catch (error) {
+			if (request !== folderRequest) return;
+			folders = [];
+			vaultFolder = new Failure(
+				`The vault's Syncthing folder is unknown: ${(error as Error)?.message ?? error}`
+			);
+		}
+	}
+	onMount(findFolder);
+
+	function setFolderId(id: string) {
+		folderId = id;
+		parent.plugin.device.folderId = id;
+		parent.plugin.saveDeviceSettings();
+		if (folders.length > 0) {
+			folderRequest++;
+			vaultFolder = parent.syncthingController.matchVaultFolder(folders);
+		} else {
+			void findFolder();
+		}
+	}
 
 	async function checkSyncthing() {
 		if (!Platform.isDesktopApp) return;
@@ -53,6 +91,7 @@
 		try {
 			parent.plugin.setApiKey(key);
 			apiKey = key;
+			void findFolder();
 		} catch (error) {
 			new Notice(`Could not store the API key in Obsidian's keychain: ${error}`);
 		}
@@ -82,6 +121,7 @@
 		parent.plugin.device.baseUrl = parsed;
 		parent.plugin.saveDeviceSettings();
 		void checkSyncthing();
+		void findFolder();
 	}
 </script>
 
@@ -292,6 +332,42 @@
 	</button>
 </ObsidianSettingsItem>
 
+<!-- Vault folder -->
+<ObsidianSettingsItem name="Syncthing folder of this vault">
+	<svelte:fragment slot="description">
+		{#if vaultFolder === undefined}
+			Looking for the folder…
+		{:else if vaultFolder instanceof Failure}
+			<span class="mod-warning">{vaultFolder.message}</span>
+		{:else}
+			"{vaultFolder.folder.label || vaultFolder.folder.id}" at
+			{vaultFolder.folder.path}{vaultFolder.vaultPath
+				? `, with the vault in ${vaultFolder.vaultPath}`
+				: ""}{vaultFolder.chosen ? " (chosen)" : " (found by its path)"}.
+			{#if vaultFolder.vaultPath === undefined}
+				<span class="mod-warning">
+					The vault's path is not inside this folder's path, so where the
+					vault is in the folder is unknown.
+				</span>
+			{/if}
+		{/if}
+	</svelte:fragment>
+	<select
+		slot="control"
+		class="dropdown"
+		value={folderId}
+		on:change={(event) => setFolderId(event.currentTarget.value)}
+	>
+		<option value="">Find by path</option>
+		{#each folders as folder (folder.id)}
+			<option value={folder.id}>{folder.label || folder.id}</option>
+		{/each}
+		{#if folderId && !folders.some((folder) => folder.id === folderId)}
+			<option value={folderId}>{folderId}</option>
+		{/if}
+	</select>
+</ObsidianSettingsItem>
+
 <!-- Configuration display -->
 <ObsidianSettingsItem name="Syncthing Configuration" heading={true} />
 <ObsidianSettingsItem
@@ -307,7 +383,7 @@
 </ObsidianSettingsItem>
 
 <!-- Ignoring files -->
-<SyncthingIgnoreFiles {parent} />
+<SyncthingIgnoreFiles {parent} {vaultFolder} />
 
 <!-- Plugin developer mode -->
 {#if Platform.isDesktopApp}

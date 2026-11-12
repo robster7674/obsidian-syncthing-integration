@@ -14,7 +14,7 @@ describe("parseSettings", () => {
 	it("gives the defaults when nothing was saved", () => {
 		expect(parseSettings(null, null)).toEqual({
 			settings: { devMode: false },
-			device: { baseUrl: DEFAULT_BASE_URL, cliPath: "" },
+			device: { baseUrl: DEFAULT_BASE_URL, cliPath: "", folderId: "" },
 			takeOver: false,
 			sharedApiKey: undefined,
 			shared: {},
@@ -33,6 +33,7 @@ describe("parseSettings", () => {
 		expect(loaded.device).toEqual({
 			baseUrl: "https://example.org/syncthing",
 			cliPath: "/opt/syncthing",
+			folderId: "",
 		});
 		expect(loaded.rewrite).toBe(false);
 	});
