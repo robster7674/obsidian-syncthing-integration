@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Platform, type TFile } from "obsidian";
-import type { SyncthingFromAndroid } from "src/data/syncthing_android_datasource";
 import type { SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import type { SyncthingFromREST } from "src/data/syncthing_remote_datasource";
 import type SyncthingPlugin from "src/main";
@@ -23,15 +22,12 @@ interface ControllerHarness {
 	cli: {
 		getVersion: Mock;
 		getAPIkey: Mock;
-		startSyncthing: Mock;
-		stopSyncthing: Mock;
 	};
 	rest: {
 		ping: Mock;
 		getDevices: Mock;
 		getAllFolders: Mock;
 	};
-	android: { hasSyncthing: Mock };
 	plugin: FakePlugin;
 }
 
@@ -39,23 +35,19 @@ function makeHarness(files: TFile[] = [], settings = {}): ControllerHarness {
 	const cli = {
 		getVersion: vi.fn(),
 		getAPIkey: vi.fn(),
-		startSyncthing: vi.fn(),
-		stopSyncthing: vi.fn(),
 	};
 	const rest = {
 		ping: vi.fn(),
 		getDevices: vi.fn(),
 		getAllFolders: vi.fn(),
 	};
-	const android = { hasSyncthing: vi.fn() };
 	const plugin = makePlugin(files, settings);
 	const controller = new SyncthingController(
 		cli as unknown as SyncthingFromCLI,
 		rest as unknown as SyncthingFromREST,
-		android as unknown as SyncthingFromAndroid,
 		asPlugin(plugin) as SyncthingPlugin,
 	);
-	return { controller, cli, rest, android, plugin };
+	return { controller, cli, rest, plugin };
 }
 
 beforeEach(() => {
@@ -93,22 +85,6 @@ describe("SyncthingController status helpers", () => {
 });
 
 describe("SyncthingController.hasSyncthing", () => {
-	it("uses the Android datasource on Android", async () => {
-		Platform.isAndroidApp = true;
-		const { controller, android, cli } = makeHarness();
-		android.hasSyncthing.mockResolvedValue(true);
-
-		await expect(controller.hasSyncthing()).resolves.toBe(true);
-		expect(cli.getVersion).not.toHaveBeenCalled();
-	});
-
-	it("returns false on iOS", async () => {
-		Platform.isIosApp = true;
-		const { controller } = makeHarness();
-
-		await expect(controller.hasSyncthing()).resolves.toBe(false);
-	});
-
 	it("returns true when the CLI version is available", async () => {
 		const { controller, cli } = makeHarness();
 		cli.getVersion.mockResolvedValue("syncthing v1.27.0");
@@ -337,17 +313,4 @@ describe("SyncthingController datasource delegation", () => {
 		await expect(controller.getFolders()).resolves.toBe(folders);
 	});
 
-	it("startSyncthing delegates to the CLI datasource", async () => {
-		const { controller, cli } = makeHarness();
-		cli.startSyncthing.mockResolvedValue(true);
-
-		await expect(controller.startSyncthing()).resolves.toBe(true);
-	});
-
-	it("stopSyncthing delegates to the CLI datasource", async () => {
-		const { controller, cli } = makeHarness();
-		cli.stopSyncthing.mockResolvedValue(true);
-
-		await expect(controller.stopSyncthing()).resolves.toBe(true);
-	});
 });
