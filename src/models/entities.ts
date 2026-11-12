@@ -52,11 +52,8 @@ export class SyncthingDevice {
 }
 
 /**
- * This is the devices' information that is stored in the {@linkcode SyncthingFolder} object.
- */
-/**
- * A device a folder is shared with. Its encryption password, also in the
- * REST answer, is deliberately not kept.
+ * A device a {@linkcode SyncthingFolder} is shared with. Its encryption
+ * password, also in the REST answer, is deliberately not kept.
  */
 export class ReducedSyncthingDevice
 	implements Pick<SyncthingDevice, "deviceID" | "introducedBy">

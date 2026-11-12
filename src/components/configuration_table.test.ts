@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/svelte";
-import { tick } from "svelte";
 import type { ConfigurationModal } from "src/views/configuration_modal";
 import { RestFailure } from "src/models/failures";
 import ConfigurationTable from "./configuration_table.svelte";
@@ -49,6 +48,7 @@ describe("configuration_table.svelte", () => {
 
 		const text = container.textContent ?? "";
 		expect(text).toContain("/home/me/Vault");
+		expect(text).toContain("Send & Receive");
 		expect(text).toContain("Shared with");
 		expect(text).toMatch(/Shared with\s*phone/);
 		expect(text).toMatch(/phone\s*Connected/);
@@ -64,11 +64,35 @@ describe("configuration_table.svelte", () => {
 		});
 
 		const { container } = render(ConfigurationTable, { props: { parent } });
-		await tick();
 		await vi.waitFor(() =>
 			expect(container.querySelector(".callout")?.textContent).toContain(
 				"Access was refused",
 			),
+		);
+	});
+
+	it("says when this device cannot be identified", async () => {
+		const parent = parentWith(async () => ({
+			folders: [],
+			thisDevice: undefined,
+			otherDevices: [device("A", "a")],
+			connected: new Set(),
+		}));
+
+		const { container } = render(ConfigurationTable, { props: { parent } });
+
+		await vi.waitFor(() =>
+			expect(container.textContent).toContain("cannot be told apart"),
+		);
+	});
+
+	it("shows a failure that is not an Error", async () => {
+		const parent = parentWith(() => Promise.reject("offline"));
+
+		const { container } = render(ConfigurationTable, { props: { parent } });
+
+		await vi.waitFor(() =>
+			expect(container.querySelector(".callout")?.textContent).toContain("offline"),
 		);
 	});
 });

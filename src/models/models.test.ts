@@ -61,7 +61,6 @@ describe("SyncthingDeviceModel", () => {
 		expect(device.name).toBe("local-device");
 	});
 
-
 	it("throws when addresses are missing", () => {
 		expect(() =>
 			SyncthingDeviceModel.fromJSON(
@@ -89,7 +88,6 @@ describe("ReducedSyncthingDeviceModel", () => {
 		expect(device.deviceID).toBe("AAAAAAA");
 		expect(JSON.stringify(device)).not.toContain("folder-secret");
 	});
-
 
 	it("throws when the JSON is not an object", () => {
 		expect(() => ReducedSyncthingDeviceModel.fromJSON("null")).toThrow(

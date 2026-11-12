@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { type SyncthingDevice, type SyncthingFolder } from "src/models/entities";
+	import {
+		type SyncTypes,
+		type SyncthingDevice,
+		type SyncthingFolder,
+	} from "src/models/entities";
 	import { type ConfigurationModal } from "src/views/configuration_modal";
 	import { onMount } from "svelte";
 	import ObsidianLucideIcon from "./obsidian_lucide_icon.svelte";
@@ -21,7 +25,10 @@
 			({ folders, thisDevice, otherDevices, connected } =
 				await parent.plugin.syncthingController.getOverview());
 		} catch (failure) {
-			error = (failure as Error).message;
+			error =
+				(failure as { message?: unknown })?.message?.toString() ||
+				String(failure) ||
+				"Syncthing did not answer.";
 		}
 		loading = false;
 	});
@@ -29,6 +36,14 @@
 	const nameOf = (deviceID: string) =>
 		[thisDevice, ...otherDevices].find((device) => device?.deviceID === deviceID)
 			?.name || deviceID.slice(0, 7);
+
+	/** The names Syncthing's GUI gives to folder types. */
+	const FOLDER_TYPES: Record<SyncTypes, string> = {
+		sendreceive: "Send & Receive",
+		sendonly: "Send Only",
+		receiveonly: "Receive Only",
+		receiveencrypted: "Receive Encrypted",
+	};
 
 	const sharedWith = (folder: SyncthingFolder) =>
 		folder.devices
@@ -59,7 +74,7 @@
 						<dt>Path</dt>
 						<dd>{folder.path}</dd>
 						<dt>Type</dt>
-						<dd>{folder.type}</dd>
+						<dd>{FOLDER_TYPES[folder.type] ?? folder.type}</dd>
 						<dt>Shared with</dt>
 						<dd>{sharedWith(folder).join(", ") || "No other device"}</dd>
 					</dl>
@@ -68,7 +83,12 @@
 		</section>
 		<section>
 			<h2>This device</h2>
-			{#if thisDevice}
+			{#if !thisDevice}
+				<p>
+					Syncthing's own device ID is not among its configured
+					devices, so this device cannot be told apart.
+				</p>
+			{:else}
 				<div class="item">
 					<div class="title">
 						<ObsidianLucideIcon name="hard-drive" />

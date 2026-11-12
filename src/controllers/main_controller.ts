@@ -201,7 +201,6 @@ export class SyncthingController {
 		return this.plugin.getApiKey();
 	}
 
-
 	/**
 	 * Gets what the configuration view shows: the folders, this device and the
 	 * other devices, with whether each is connected now.
