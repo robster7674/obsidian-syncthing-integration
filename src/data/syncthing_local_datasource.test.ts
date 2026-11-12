@@ -72,6 +72,15 @@ describe("SyncthingFromCLI.getVersion", () => {
 		});
 	});
 
+	it("says the configured path is wrong when nothing is there", async () => {
+		plugin.device.cliPath = "/opt/syncthing/syncthng";
+		outcome.error = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+
+		await expect(cli.getVersion()).rejects.toMatchObject({
+			message: expect.stringContaining("no program is at that path"),
+		});
+	});
+
 	it("reports what Syncthing wrote when it exits with an error", async () => {
 		outcome = { error: new Error("Command failed"), stderr: "config: locked\n" };
 
@@ -98,11 +107,31 @@ describe("SyncthingFromCLI.binary", () => {
 		expect(calls[0].binary).toBe("C:\\Program Files\\Syncthing\\syncthing.exe");
 	});
 
-	it("uses the syncthing-macos app when it is installed", () => {
+	it("runs the syncthing-macos app when it is installed", async () => {
 		Platform.isMacOS = true;
 		vi.mocked(fs.existsSync).mockReturnValue(true);
+		outcome.stdout = "v2";
 
-		expect(cli.binary()).toBe(MACOS_APP_BINARY);
+		await cli.getVersion();
+
+		expect(calls[0].binary).toBe(MACOS_APP_BINARY);
+	});
+
+	it("prefers the path set for this device over the macOS app", () => {
+		Platform.isMacOS = true;
+		vi.mocked(fs.existsSync).mockReturnValue(true);
+		plugin.device.cliPath = "/opt/homebrew/bin/syncthing";
+
+		expect(cli.binary()).toBe("/opt/homebrew/bin/syncthing");
+	});
+
+	it("refuses a batch script, which cannot run without a shell", async () => {
+		plugin.device.cliPath = "C:\\scoop\\shims\\syncthing.cmd";
+
+		await expect(cli.getVersion()).rejects.toMatchObject({
+			message: expect.stringContaining("is a script"),
+		});
+		expect(calls).toEqual([]);
 	});
 
 	it("falls back to the PATH on macOS without the app, such as a Homebrew install", () => {

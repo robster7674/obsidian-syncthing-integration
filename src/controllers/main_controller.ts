@@ -58,7 +58,7 @@ export class SyncthingController {
 	}
 
 	/**
-	 * Checks whether Syncthing can be reached: its program on desktop, or its REST API.
+	 * Checks whether Syncthing can be reached on desktop: its program, or its REST API.
 	 */
 	async hasSyncthing(): Promise<boolean> {
 		const answers = (check: () => Promise<unknown>) =>
@@ -66,13 +66,10 @@ export class SyncthingController {
 				() => true,
 				() => false
 			);
-		if (
-			Platform.isDesktopApp &&
-			(await answers(() => this.syncthingFromCLI.getVersion()))
-		) {
-			return true;
-		}
-		return answers(() => this.syncthingFromREST.ping());
+		return (
+			(await answers(() => this.syncthingFromCLI.getVersion())) ||
+			answers(() => this.syncthingFromREST.ping())
+		);
 	}
 
 	/**

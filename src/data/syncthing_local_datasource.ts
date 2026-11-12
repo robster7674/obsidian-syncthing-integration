@@ -63,6 +63,13 @@ export class SyncthingFromCLI {
 			);
 		}
 		const binary = this.binary();
+		if (/\.(bat|cmd)$/i.test(binary)) {
+			return Promise.reject(
+				new CliFailure(
+					`${binary} is a script. Set the path to the Syncthing program itself, such as syncthing.exe.`
+				)
+			);
+		}
 		// eslint-disable-next-line @typescript-eslint/no-var-requires
 		const { execFile } = require("child_process");
 		return new Promise((resolve, reject) => {
@@ -80,9 +87,11 @@ export class SyncthingFromCLI {
 						return;
 					}
 					const reason =
-						error.code === "ENOENT"
-							? "the program was not found. Set the path to Syncthing in the plugin settings."
-							: String(stderr).trim() || error.message;
+						error.code !== "ENOENT"
+							? String(stderr).trim() || error.message
+							: this.plugin.device.cliPath.trim()
+								? "no program is at that path. Check the path to Syncthing in the plugin settings."
+								: "the program was not found. Set the path to Syncthing in the plugin settings.";
 					reject(new CliFailure(`Running ${binary} failed: ${reason}`));
 				}
 			);

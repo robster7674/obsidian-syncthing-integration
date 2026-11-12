@@ -100,11 +100,9 @@ export class SyncthingFromREST {
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			throw new RestFailure(
-				`Could not reach Syncthing at ${baseUrl}: ${reason}${
-					/cert|ssl|tls/i.test(reason)
-						? " Obsidian does not accept a self-signed certificate, such as the one Syncthing creates for its GUI."
-						: ""
-				}`
+				`Could not reach Syncthing at ${baseUrl}: ${reason}${connectionHint(
+					reason
+				)}`
 			);
 		}
 		if (response.status === 401 || response.status === 403) {
@@ -117,7 +115,7 @@ export class SyncthingFromREST {
 				`Syncthing answered HTTP ${response.status} for ${endpoint}.`
 			);
 		}
-		if (redirectsToHttps(response)) {
+		if (baseUrl.startsWith("http:") && redirectsToHttps(response)) {
 			throw new RestFailure(
 				`Syncthing at ${baseUrl} serves its GUI over HTTPS only. Use https:// in the Syncthing URL.`
 			);
@@ -141,12 +139,28 @@ export class SyncthingFromREST {
  * body is a link; some platforms hand that body back instead of following it.
  */
 function redirectsToHttps(response: RequestUrlResponse): boolean {
-	if (response.status >= 300 && response.status < 400) return true;
+	const location = Object.entries(response.headers ?? {}).find(
+		([name]) => name.toLowerCase() === "location"
+	)?.[1];
+	if (response.status >= 300 && response.status < 400 && location) {
+		return location.startsWith("https:");
+	}
 	try {
 		return /^\s*<a href="https:\/\//i.test(response.text);
 	} catch {
 		return false;
 	}
+}
+
+/** What to try when a connection failed for a TLS reason. */
+function connectionHint(reason: string): string {
+	if (/SSL_PROTOCOL|WRONG_VERSION_NUMBER|packet length too long/i.test(reason)) {
+		return " This Syncthing may serve plain HTTP: try http:// in the Syncthing URL.";
+	}
+	if (/CERT/i.test(reason)) {
+		return " Obsidian does not accept a self-signed certificate, such as the one Syncthing creates for its GUI.";
+	}
+	return "";
 }
 
 /**

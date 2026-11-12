@@ -23,6 +23,7 @@
 	let baseUrlError = savedUrl instanceof Failure ? savedUrl.message : "";
 
 	async function checkSyncthing() {
+		if (!Platform.isDesktopApp) return;
 		hasSyncthing = await parent.syncthingController.hasSyncthing();
 	}
 	onMount(checkSyncthing);
@@ -34,6 +35,7 @@
 		input.value = cliPath;
 		parent.plugin.device.cliPath = cliPath;
 		parent.plugin.saveDeviceSettings();
+		void checkSyncthing();
 	}
 
 	let apiKey = parent.plugin.getApiKey();
@@ -79,6 +81,7 @@
 		input.value = parsed;
 		parent.plugin.device.baseUrl = parsed;
 		parent.plugin.saveDeviceSettings();
+		void checkSyncthing();
 	}
 </script>
 

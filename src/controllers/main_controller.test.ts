@@ -85,16 +85,6 @@ describe("SyncthingController status helpers", () => {
 });
 
 describe("SyncthingController.hasSyncthing", () => {
-	it("asks only the REST API on mobile", async () => {
-		Platform.isDesktopApp = false;
-		Platform.isMobileApp = true;
-		const { controller, cli, rest } = makeHarness();
-		rest.ping.mockResolvedValue("pong");
-
-		await expect(controller.hasSyncthing()).resolves.toBe(true);
-		expect(cli.getVersion).not.toHaveBeenCalled();
-	});
-
 	it("returns true when the CLI version is available", async () => {
 		const { controller, cli } = makeHarness();
 		cli.getVersion.mockResolvedValue("syncthing v1.27.0");

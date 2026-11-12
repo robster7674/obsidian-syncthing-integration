@@ -145,6 +145,30 @@ describe("SyncthingFromREST.ping", () => {
 		});
 	});
 
+	it("does not blame HTTPS for another redirect", async () => {
+		plugin.device.baseUrl = "http://example.org/syncthing";
+		mockRequestUrl.mockResolvedValue({
+			...response("Found", 302),
+			headers: { Location: "http://example.org/login" },
+			get json(): unknown {
+				throw new SyntaxError("not json");
+			},
+		});
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("Check the Syncthing URL"),
+		});
+	});
+
+	it("suggests http:// when an https:// URL meets plain HTTP", async () => {
+		plugin.device.baseUrl = "https://127.0.0.1:8384";
+		mockRequestUrl.mockRejectedValue(new Error("net::ERR_SSL_PROTOCOL_ERROR"));
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("try http://"),
+		});
+	});
+
 	it("explains a refused self-signed certificate", async () => {
 		plugin.device.baseUrl = "https://127.0.0.1:8384";
 		mockRequestUrl.mockRejectedValue(new Error("net::ERR_CERT_AUTHORITY_INVALID"));
