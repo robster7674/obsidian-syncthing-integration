@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import type { SyncthingSettingTab } from "src/views/settings_tab";
 import { Failure } from "src/models/failures";
 import type { VaultFolder } from "src/controllers/vault_folder";
+import type { SyncthingFolder } from "src/models/entities";
 import SyncthingIgnoreFiles from "./syncthing_ignore_files.svelte";
 
 afterEach(() => {
@@ -11,13 +12,20 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-const ROOT_FOLDER = {
-	folder: { id: "vault", label: "Vault", path: "/home/me/Vault" },
+/** A Syncthing folder with only the fields the editor reads. */
+const folder = (id: string, path: string) =>
+	({ id, label: id, path, devices: [] }) as unknown as SyncthingFolder;
+
+const ROOT_FOLDER: VaultFolder = {
+	folder: folder("Vault", "/home/me/Vault"),
 	vaultPath: "",
 	chosen: false,
 };
 
-function setup(content: string | undefined, vaultFolder: object | "loading" = ROOT_FOLDER) {
+function setup(
+	content: string | undefined,
+	vaultFolder: VaultFolder | Failure | "loading" = ROOT_FOLDER,
+) {
 	const files = new Map<string, string>();
 	if (content !== undefined) files.set(".stignore", content);
 	const parent = {
@@ -38,10 +46,7 @@ function setup(content: string | undefined, vaultFolder: object | "loading" = RO
 	const view = render(SyncthingIgnoreFiles, {
 		props: {
 			parent,
-			vaultFolder: (vaultFolder === "loading" ? undefined : vaultFolder) as
-				| VaultFolder
-				| Failure
-				| undefined,
+			vaultFolder: vaultFolder === "loading" ? undefined : vaultFolder,
 		},
 	});
 	return { files, ...view };
@@ -90,7 +95,7 @@ describe("syncthing_ignore_files.svelte", () => {
 
 	it("does not edit the vault's .stignore when the folder starts above the vault", () => {
 		const { container } = setup("", {
-			folder: { id: "sync", label: "Sync", path: "/home/me/Sync" },
+			folder: folder("Sync", "/home/me/Sync"),
 			vaultPath: "Vault",
 			chosen: false,
 		});
