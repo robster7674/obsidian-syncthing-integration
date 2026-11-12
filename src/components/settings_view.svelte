@@ -32,12 +32,24 @@
 		apiKey = key;
 	}
 
-	function storeApiKey(key: string) {
+	function storeApiKey(key: string, input?: HTMLInputElement) {
 		try {
 			parent.plugin.setApiKey(key);
 			apiKey = key;
 		} catch (error) {
 			new Notice(`Could not store the API key in Obsidian's keychain: ${error}`);
+		}
+		if (input) input.value = apiKey;
+	}
+
+	let hasSharedSettings = parent.plugin.hasSharedSettings();
+
+	async function removeSharedSettings() {
+		try {
+			await parent.plugin.removeSharedSettings();
+			hasSharedSettings = false;
+		} catch (error) {
+			new Notice((error as Error).message);
 		}
 	}
 
@@ -114,7 +126,8 @@
 			id="apikey"
 			value={apiKey}
 			placeholder="Enter your API key here..."
-			on:change={(event) => storeApiKey(event.currentTarget.value.trim())}
+			on:change={(event) =>
+				storeApiKey(event.currentTarget.value.trim(), event.currentTarget)}
 		/>
 		{#if !apiKey}
 			<button on:click={getAPIkey}> Get API key </button>
@@ -139,6 +152,17 @@
 		{/if}
 	</svelte:fragment>
 </ObsidianSettingsItem>
+
+{#if hasSharedSettings}
+	<ObsidianSettingsItem
+		name="Settings shared by version 2.4.0"
+		description="data.json, which Syncthing syncs to all your devices, still holds the API key and Syncthing URL that version 2.4.0 shared. They stay there so that each device can take them over when it updates. Remove them once every device runs this version."
+	>
+		<button slot="control" on:click={removeSharedSettings}>
+			Remove from data.json
+		</button>
+	</ObsidianSettingsItem>
+{/if}
 
 <!-- Syncthing status -->
 <ObsidianSettingsItem name="Syncthing API Status">

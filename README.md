@@ -82,7 +82,7 @@ The plugin is more focused on getting information from an active [Syncthing][syn
 The plugin's configuration provides a way to set up the connection to your [Syncthing][syncthing website] instance.
 On Desktop, it should be straightforward if you have the CLI installed. Otherwise, you can use the GUI to set up the connection.
 
-Each device keeps its own Syncthing URL and API key, because each device runs its own Syncthing. The API key is stored in Obsidian's keychain and the URL in the vault's local storage, both on that device only. Neither is written to the plugin's `data.json`, which Syncthing syncs to your other devices. This needs Obsidian 1.11.4 or later. Settings saved by version 2.4.0 or earlier move there the first time the plugin loads; update the plugin on all your devices, because an older version still writes its API key to `data.json`.
+Each device keeps its own Syncthing URL and API key, because each device runs its own Syncthing. The API key is stored in Obsidian's keychain and the URL in the vault's local storage, both on that device only. Neither is written to the plugin's `data.json`, which Syncthing syncs to your other devices. This needs Obsidian 1.11.4 or later. Version 2.4.0 and earlier kept one API key and URL for all devices in `data.json`. Each device takes them over when it updates, and they stay in `data.json` until you remove them in the plugin settings, once every device runs the new version. The GUI user name and password that 2.4.0 saved are removed at once, because nothing uses them any more.
 
 <details>
 <summary>Click here to see an example of the configuration settings</summary>

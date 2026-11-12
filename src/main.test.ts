@@ -31,8 +31,14 @@ beforeEach(() => {
 	notices().length = 0;
 });
 
+const SHARED_DATA = {
+	api_key: LEGACY_DATA.api_key,
+	configuration: LEGACY_DATA.configuration,
+	devMode: true,
+};
+
 describe("SyncthingPlugin.loadSettings", () => {
-	it("moves the API key and address out of data.json, then rewrites it", async () => {
+	it("takes over 2.4.0's key and address, and drops only the GUI credentials", async () => {
 		const { app, plugin, saved } = makeDevice(LEGACY_DATA);
 
 		await plugin.loadSettings();
@@ -41,45 +47,93 @@ describe("SyncthingPlugin.loadSettings", () => {
 		expect(app.loadLocalStorage(DEVICE_SETTINGS_KEY)).toEqual({
 			baseUrl: "http://192.168.1.5:8384",
 		});
-		expect(saved()).toEqual({ devMode: true });
+		expect(saved()).toEqual(SHARED_DATA);
 		expect(plugin.getApiKey()).toBe("key-from-data-json");
 		expect(plugin.device.baseUrl).toBe("http://192.168.1.5:8384");
+		expect(plugin.hasSharedSettings()).toBe(true);
 	});
 
-	it("keeps this device's own key when data.json still holds another device's", async () => {
+	it("lets a second device take over the same settings after the first one updated", async () => {
+		const first = makeDevice(LEGACY_DATA);
+		await first.plugin.loadSettings();
+		const second = makeDevice(first.saved());
+
+		await second.plugin.loadSettings();
+
+		expect(second.plugin.getApiKey()).toBe("key-from-data-json");
+		expect(second.plugin.device.baseUrl).toBe("http://192.168.1.5:8384");
+	});
+
+	it("keeps the shared fields when other settings are saved", async () => {
+		const { plugin, saved } = makeDevice(LEGACY_DATA);
+		await plugin.loadSettings();
+
+		plugin.settings.devMode = false;
+		await plugin.saveSettings();
+
+		expect(saved()).toEqual({ ...SHARED_DATA, devMode: false });
+	});
+
+	it("removes the shared fields when asked", async () => {
+		const { plugin, saved } = makeDevice(LEGACY_DATA);
+		await plugin.loadSettings();
+
+		await plugin.removeSharedSettings();
+
+		expect(saved()).toEqual({ devMode: true });
+		expect(plugin.hasSharedSettings()).toBe(false);
+		expect(plugin.getApiKey()).toBe("key-from-data-json");
+	});
+
+	it("keeps this device's own key and URL over the shared ones", async () => {
 		const { app, plugin, saved } = makeDevice(LEGACY_DATA);
 		app.secretStorage.setSecret(API_KEY_SECRET, "this-device-key");
+		app.saveLocalStorage(DEVICE_SETTINGS_KEY, { baseUrl: "http://127.0.0.1:8385" });
 
 		await plugin.loadSettings();
 
 		expect(plugin.getApiKey()).toBe("this-device-key");
-		expect(saved()).toEqual({ devMode: true });
+		expect(plugin.device.baseUrl).toBe("http://127.0.0.1:8385");
+		expect(saved()).toEqual(SHARED_DATA);
 	});
 
-	it("leaves data.json alone when the keychain refuses the key", async () => {
+	it("uses the key in data.json, and refuses to remove it, when the keychain refuses it", async () => {
 		const { app, plugin, saved } = makeDevice(LEGACY_DATA);
 		app.secretStorage.setSecret = vi.fn(() => {
 			throw new Error("Secure storage is not available.");
 		});
 
 		await plugin.loadSettings();
+		plugin.settings.devMode = false;
+		await plugin.saveSettings();
 
-		expect(saved()).toEqual(LEGACY_DATA);
 		expect(plugin.getApiKey()).toBe("key-from-data-json");
+		expect(saved()).toMatchObject({ api_key: "key-from-data-json" });
 		expect(notices().map((notice) => notice.message)).toEqual([
-			expect.stringContaining("stays in data.json"),
+			expect.stringContaining("the one in data.json is used"),
 		]);
+		await expect(plugin.removeSharedSettings()).rejects.toThrow("keychain");
+		expect(saved()).toMatchObject({ api_key: "key-from-data-json" });
 	});
 
-	it("migrates again when another device syncs an old data.json", async () => {
-		const { app, plugin, saved } = makeDevice({ devMode: false });
+	it("takes over the settings when another device syncs an old data.json", async () => {
+		const { app, plugin } = makeDevice({ devMode: false });
 		await plugin.loadSettings();
 		plugin.loadData = vi.fn(async () => structuredClone(LEGACY_DATA));
 
 		await plugin.onExternalSettingsChange();
 
 		expect(app.secretStorage.getSecret(API_KEY_SECRET)).toBe("key-from-data-json");
-		expect(saved()).toEqual({ devMode: true });
+	});
+
+	it("shows a problem with the saved URL once, not on every sync", async () => {
+		const { app, plugin } = makeDevice({ devMode: false });
+		app.saveLocalStorage(DEVICE_SETTINGS_KEY, { baseUrl: "ftp://host" });
+
+		await plugin.loadSettings();
+		await plugin.onExternalSettingsChange();
+
+		expect(notices()).toHaveLength(1);
 	});
 
 	it("does not write anything for settings already in the current format", async () => {

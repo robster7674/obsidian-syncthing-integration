@@ -13,7 +13,8 @@ describe("parseSettings", () => {
 			settings: { devMode: false },
 			device: { baseUrl: DEFAULT_BASE_URL },
 			deviceFromData: false,
-			legacyApiKey: undefined,
+			sharedApiKey: undefined,
+			shared: {},
 			rewrite: false,
 			problem: undefined,
 		});
@@ -30,7 +31,7 @@ describe("parseSettings", () => {
 		expect(loaded.rewrite).toBe(false);
 	});
 
-	it("moves 2.4.0's key and address out of data.json and drops the GUI credentials", () => {
+	it("takes over 2.4.0's key and address, keeps them for other devices, and drops the GUI credentials", () => {
 		const loaded = parseSettings(
 			{
 				api_key: "key",
@@ -48,7 +49,13 @@ describe("parseSettings", () => {
 			settings: { devMode: false },
 			device: { baseUrl: "https://192.168.1.5:8443" },
 			deviceFromData: true,
-			legacyApiKey: "key",
+			sharedApiKey: "key",
+			shared: {
+				api_key: "key",
+				configuration: {
+					url: { protocol: "https", ip_address: "192.168.1.5", port: 8443 },
+				},
+			},
 			rewrite: true,
 		});
 		expect(JSON.stringify(loaded.settings)).not.toContain("secret");
@@ -62,7 +69,7 @@ describe("parseSettings", () => {
 
 		expect(loaded.device.baseUrl).toBe("http://127.0.0.1:8385");
 		expect(loaded.deviceFromData).toBe(false);
-		expect(loaded.rewrite).toBe(true);
+		expect(loaded.rewrite).toBe(false);
 	});
 
 	it("turns 2.4.0's untouched default into Syncthing's default address", () => {

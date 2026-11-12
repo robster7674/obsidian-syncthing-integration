@@ -23,12 +23,17 @@ export interface DeviceSettings {
 	baseUrl: string;
 }
 
-const MOVED_FIELDS = ["api_key", "baseUrl", "configuration", "gui_username", "gui_password"];
+/** Fields of 2.4.0 that other devices may still need to take over their settings. */
+const SHARED_FIELDS = ["api_key", "baseUrl", "configuration"];
+/** Fields of 2.4.0 that nothing uses any more. */
+const DROPPED_FIELDS = ["gui_username", "gui_password"];
 
 /**
  * Reads the settings saved by any version of the plugin.
  * Up to 2.4.0, `data.json` held the API key, the address as
  * `configuration.url`, and GUI credentials, which are no longer used.
+ * The key and address are kept in `data.json` until the user removes them,
+ * so that every device can take them over when it updates.
  * A saved address that cannot be used is kept as it was, so nothing the user
  * typed is lost, and `problem` says why; requests refuse it until it is fixed.
  * @param data the content of `data.json`.
@@ -42,8 +47,10 @@ export function parseSettings(
 	device: DeviceSettings;
 	/** Device settings found only in `data.json`, which this device must now store. */
 	deviceFromData: boolean;
-	/** An API key found in `data.json`, which belongs in the keychain. */
-	legacyApiKey?: string;
+	/** The API key 2.4.0 left in `data.json`, which belongs in the keychain. */
+	sharedApiKey?: string;
+	/** The fields of 2.4.0 to keep in `data.json` for other devices. */
+	shared: Record<string, unknown>;
 	/** Whether `data.json` holds fields that saving drops. */
 	rewrite: boolean;
 	/** Why a saved value cannot be used, for the user. */
@@ -63,11 +70,14 @@ export function parseSettings(
 		settings: { devMode: saved.devMode === true },
 		device: { baseUrl: parsed instanceof Failure ? typed : parsed },
 		deviceFromData,
-		legacyApiKey:
+		sharedApiKey:
 			typeof saved.api_key === "string" && saved.api_key !== ""
 				? saved.api_key
 				: undefined,
-		rewrite: MOVED_FIELDS.some((key) => key in saved),
+		shared: Object.fromEntries(
+			SHARED_FIELDS.filter((key) => key in saved).map((key) => [key, saved[key]]),
+		),
+		rewrite: DROPPED_FIELDS.some((key) => key in saved),
 		problem:
 			parsed instanceof Failure
 				? `The saved Syncthing URL cannot be used. ${parsed.message} Set it again in the plugin settings.`

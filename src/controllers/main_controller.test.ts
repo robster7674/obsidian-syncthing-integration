@@ -291,6 +291,19 @@ describe("SyncthingController.getAPIKey", () => {
 		expect(plugin.saveSettings).not.toHaveBeenCalled();
 	});
 
+	it("says the keychain failed when the key cannot be stored", async () => {
+		const { controller, cli, plugin } = makeHarness([], { apiKey: "" });
+		cli.getAPIkey.mockResolvedValue("new-key");
+		plugin.setApiKey.mockImplementation(() => {
+			throw new Error("Secure storage is not available.");
+		});
+
+		const result = await controller.getAPIKey();
+
+		expect(result).toBeInstanceOf(Failure);
+		expect((result as Failure).message).toContain("keychain");
+	});
+
 	it("does not persist an empty key returned by the CLI", async () => {
 		const { controller, cli, plugin } = makeHarness([], { apiKey: "" });
 		cli.getAPIkey.mockResolvedValue("");

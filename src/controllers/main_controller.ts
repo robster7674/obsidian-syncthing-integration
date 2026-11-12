@@ -198,14 +198,21 @@ export class SyncthingController {
 			);
 		}
 		if (!this.plugin.getApiKey()) {
+			let apiKey: string;
 			try {
-				const apiKey = await this.syncthingFromCLI.getAPIkey();
-				if (apiKey) {
-					this.plugin.setApiKey(apiKey);
-					return apiKey;
-				}
+				apiKey = await this.syncthingFromCLI.getAPIkey();
 			} catch (error) {
 				return new CliFailure("Error getting API key.");
+			}
+			if (apiKey) {
+				try {
+					this.plugin.setApiKey(apiKey);
+				} catch (error) {
+					return new Failure(
+						`Could not store the API key in Obsidian's keychain: ${error}`
+					);
+				}
+				return apiKey;
 			}
 		}
 		return this.plugin.getApiKey();
