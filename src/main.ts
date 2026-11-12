@@ -22,12 +22,21 @@ import { DiffModal } from "./views/diff_modal";
 import { SyncthingLogoSVG } from "./views/logos";
 import { SyncthingSettingTab } from "./views/settings_tab";
 import { ConfigurationModal } from "./views/configuration_modal";
-import { parseSettings, type SyncthingPluginSettings } from "./settings";
+import {
+	API_KEY_SECRET,
+	DEVICE_SETTINGS_KEY,
+	type DeviceSettings,
+	parseSettings,
+	type SyncthingPluginSettings,
+} from "./settings";
 
 export default class SyncthingPlugin extends Plugin {
 	PLUGIN_ID = "syncthing-integration";
 	static loadCount = 0;
 	settings!: SyncthingPluginSettings;
+	device!: DeviceSettings;
+	/** An API key that could not be moved from `data.json` to the keychain. */
+	private unmovedApiKey?: string;
 	pluginsElements: HTMLElement[] = [];
 	syncthingFromCLI: SyncthingFromCLI = new SyncthingFromCLI();
 	syncthingFromREST: SyncthingFromREST = new SyncthingFromREST(this);
@@ -113,18 +122,62 @@ export default class SyncthingPlugin extends Plugin {
 	}
 
 	/**
-	 * Loads the settings, and rewrites them at once when they still hold
-	 * fields of an earlier version, such as GUI credentials.
+	 * Loads the settings. The API key and the Syncthing URL of earlier versions
+	 * move from `data.json`, which syncs, to this device's keychain and local
+	 * storage; `data.json` is rewritten only once both are stored. A device
+	 * that already has its own API key keeps it.
 	 */
 	async loadSettings() {
-		const { settings, legacy, problem } = parseSettings(await this.loadData());
-		this.settings = settings;
-		if (problem) new Notice(`Syncthing Integration: ${problem}`, 0);
-		if (legacy) await this.saveSettings();
+		const loaded = parseSettings(
+			await this.loadData(),
+			this.app.loadLocalStorage(DEVICE_SETTINGS_KEY),
+		);
+		this.settings = loaded.settings;
+		this.device = loaded.device;
+		this.unmovedApiKey = undefined;
+		if (loaded.problem) new Notice(`Syncthing Integration: ${loaded.problem}`, 0);
+		try {
+			if (loaded.legacyApiKey && !this.getApiKey()) {
+				this.setApiKey(loaded.legacyApiKey);
+			}
+			if (loaded.deviceFromData) this.saveDeviceSettings();
+		} catch (error) {
+			this.unmovedApiKey = loaded.legacyApiKey;
+			new Notice(
+				`Syncthing Integration: the API key could not be moved to Obsidian's keychain, so it stays in data.json. ${error}`,
+				0,
+			);
+			return;
+		}
+		if (loaded.rewrite) await this.saveSettings();
+	}
+
+	/** Another device synced `data.json`, possibly still in an earlier format. */
+	async onExternalSettingsChange() {
+		await this.loadSettings();
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	saveDeviceSettings() {
+		this.app.saveLocalStorage(DEVICE_SETTINGS_KEY, this.device);
+	}
+
+	/** This device's Syncthing API key, or `""` when none is set. */
+	getApiKey(): string {
+		return (
+			this.app.secretStorage.getSecret(API_KEY_SECRET) ||
+			this.unmovedApiKey ||
+			""
+		);
+	}
+
+	/** Stores this device's Syncthing API key in Obsidian's keychain; `""` clears it. */
+	setApiKey(key: string) {
+		this.app.secretStorage.setSecret(API_KEY_SECRET, key);
+		this.unmovedApiKey = undefined;
 	}
 
 	// This method adds commands for the Syncthing Plugin

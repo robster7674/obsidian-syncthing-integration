@@ -85,7 +85,7 @@ describe("SyncthingController status helpers", () => {
 	});
 
 	it("getAPIStatus pings the REST API when a key is set", async () => {
-		const { controller, rest } = makeHarness([], { api_key: "key" });
+		const { controller, rest } = makeHarness([], { apiKey: "key" });
 		rest.ping.mockResolvedValue("pong");
 
 		await expect(controller.getAPIStatus()).resolves.toBe("pong");
@@ -275,31 +275,32 @@ describe("SyncthingController.getAPIKey", () => {
 	});
 
 	it("returns the existing key without calling the CLI", async () => {
-		const { controller, cli } = makeHarness([], { api_key: "existing" });
+		const { controller, cli } = makeHarness([], { apiKey: "existing" });
 
 		await expect(controller.getAPIKey()).resolves.toBe("existing");
 		expect(cli.getAPIkey).not.toHaveBeenCalled();
 	});
 
 	it("asks the CLI and persists the key when none is set", async () => {
-		const { controller, cli, plugin } = makeHarness([], { api_key: "" });
+		const { controller, cli, plugin } = makeHarness([], { apiKey: "" });
 		cli.getAPIkey.mockResolvedValue("new-key");
 
 		await expect(controller.getAPIKey()).resolves.toBe("new-key");
-		expect(plugin.settings.api_key).toBe("new-key");
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it("does not persist an empty key returned by the CLI", async () => {
-		const { controller, cli, plugin } = makeHarness([], { api_key: "" });
-		cli.getAPIkey.mockResolvedValue("");
-
-		await expect(controller.getAPIKey()).resolves.toBe("");
+		expect(plugin.apiKey).toBe("new-key");
+		expect(plugin.setApiKey).toHaveBeenCalledWith("new-key");
 		expect(plugin.saveSettings).not.toHaveBeenCalled();
 	});
 
+	it("does not persist an empty key returned by the CLI", async () => {
+		const { controller, cli, plugin } = makeHarness([], { apiKey: "" });
+		cli.getAPIkey.mockResolvedValue("");
+
+		await expect(controller.getAPIKey()).resolves.toBe("");
+		expect(plugin.setApiKey).not.toHaveBeenCalled();
+	});
+
 	it("returns a CliFailure when the CLI throws", async () => {
-		const { controller, cli } = makeHarness([], { api_key: "" });
+		const { controller, cli } = makeHarness([], { apiKey: "" });
 		cli.getAPIkey.mockRejectedValue(new Error("boom"));
 
 		await expect(controller.getAPIKey()).resolves.toBeInstanceOf(CliFailure);

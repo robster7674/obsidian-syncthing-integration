@@ -56,7 +56,7 @@ export class SyncthingController {
 	 * Gets the Syncthing API status.
 	 */
 	async getAPIStatus(): Promise<string> {
-		if (!this.plugin.settings.api_key) {
+		if (!this.plugin.getApiKey()) {
 			return "API key is not set.";
 		}
 		return this.syncthingFromREST.ping();
@@ -197,19 +197,18 @@ export class SyncthingController {
 				"Cannot get API key on mobile. Please enter it manually.",
 			);
 		}
-		if (!this.plugin.settings.api_key) {
+		if (!this.plugin.getApiKey()) {
 			try {
 				const apiKey = await this.syncthingFromCLI.getAPIkey();
 				if (apiKey) {
-					this.plugin.settings.api_key = apiKey;
-					await this.plugin.saveSettings();
+					this.plugin.setApiKey(apiKey);
 					return apiKey;
 				}
 			} catch (error) {
 				return new CliFailure("Error getting API key.");
 			}
 		}
-		return this.plugin.settings.api_key;
+		return this.plugin.getApiKey();
 	}
 
 	/**

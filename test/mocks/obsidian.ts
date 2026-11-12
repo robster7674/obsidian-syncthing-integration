@@ -76,6 +76,20 @@ export class Vault {
 	adapter = { exists: vi.fn(async () => false), rename: vi.fn(async () => undefined) };
 }
 
+/**
+ * Obsidian's keychain, kept in memory. Like the real one, it refuses IDs
+ * other than lowercase letters, digits and dashes.
+ */
+export class SecretStorage {
+	secrets = new Map<string, string>();
+	setSecret = vi.fn((id: string, secret: string): void => {
+		if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`Invalid secret ID ${id}`);
+		this.secrets.set(id, secret);
+	});
+	getSecret = vi.fn((id: string): string | null => this.secrets.get(id) ?? null);
+	listSecrets = vi.fn((): string[] => [...this.secrets.keys()]);
+}
+
 export class App {
 	vault = new Vault();
 	workspace = {
@@ -84,6 +98,18 @@ export class App {
 		on: vi.fn(),
 	};
 	fileManager = {};
+	secretStorage = new SecretStorage();
+	/** The vault's local storage on this device. */
+	localStorage = new Map<string, unknown>();
+	loadLocalStorage = vi.fn((key: string): unknown =>
+		this.localStorage.has(key)
+			? structuredClone(this.localStorage.get(key))
+			: null,
+	);
+	saveLocalStorage = vi.fn((key: string, data: unknown): void => {
+		if (data === null) this.localStorage.delete(key);
+		else this.localStorage.set(key, structuredClone(data));
+	});
 }
 
 export class Plugin {
@@ -104,6 +130,18 @@ export class Plugin {
 		return null;
 	}
 	async saveData(_data: unknown): Promise<void> {}
+}
+
+export class PluginSettingTab {
+	app: App;
+	plugin: Plugin;
+	containerEl: HTMLElement = document.createElement("div");
+	constructor(app: App, plugin: Plugin) {
+		this.app = app;
+		this.plugin = plugin;
+	}
+	display(): void {}
+	hide(): void {}
 }
 
 /* -------------------------------------------------------------------------- */

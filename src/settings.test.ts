@@ -9,79 +9,86 @@ import {
 
 describe("parseSettings", () => {
 	it("gives the defaults when nothing was saved", () => {
-		expect(parseSettings(null)).toEqual({
-			settings: { api_key: "", baseUrl: DEFAULT_BASE_URL, devMode: false },
-			legacy: false,
+		expect(parseSettings(null, null)).toEqual({
+			settings: { devMode: false },
+			device: { baseUrl: DEFAULT_BASE_URL },
+			deviceFromData: false,
+			legacyApiKey: undefined,
+			rewrite: false,
 			problem: undefined,
 		});
 	});
 
-	it("reads the current format", () => {
-		const saved = {
-			api_key: "key",
-			baseUrl: "https://example.org/syncthing",
-			devMode: true,
-		};
+	it("reads the synced settings and this device's settings apart", () => {
+		const loaded = parseSettings(
+			{ devMode: true },
+			{ baseUrl: "https://example.org/syncthing" },
+		);
 
-		expect(parseSettings(saved)).toEqual({
-			settings: saved,
-			legacy: false,
-			problem: undefined,
-		});
+		expect(loaded.settings).toEqual({ devMode: true });
+		expect(loaded.device).toEqual({ baseUrl: "https://example.org/syncthing" });
+		expect(loaded.rewrite).toBe(false);
 	});
 
-	it("converts the address saved by 2.4.0 and drops the GUI credentials", () => {
-		const { settings, legacy } = parseSettings({
-			api_key: "key",
-			gui_username: "user",
-			gui_password: "secret",
-			configuration: {
-				url: { protocol: "https", ip_address: "192.168.1.5", port: 8443 },
+	it("moves 2.4.0's key and address out of data.json and drops the GUI credentials", () => {
+		const loaded = parseSettings(
+			{
+				api_key: "key",
+				gui_username: "user",
+				gui_password: "secret",
+				configuration: {
+					url: { protocol: "https", ip_address: "192.168.1.5", port: 8443 },
+				},
+				devMode: false,
 			},
-			devMode: false,
-		});
+			null,
+		);
 
-		expect(settings).toEqual({
-			api_key: "key",
-			baseUrl: "https://192.168.1.5:8443",
-			devMode: false,
+		expect(loaded).toMatchObject({
+			settings: { devMode: false },
+			device: { baseUrl: "https://192.168.1.5:8443" },
+			deviceFromData: true,
+			legacyApiKey: "key",
+			rewrite: true,
 		});
-		expect(JSON.stringify(settings)).not.toContain("secret");
-		expect(legacy).toBe(true);
+		expect(JSON.stringify(loaded.settings)).not.toContain("secret");
+	});
+
+	it("keeps this device's address over the one in data.json", () => {
+		const loaded = parseSettings(
+			{ baseUrl: "http://192.168.1.5:8384" },
+			{ baseUrl: "http://127.0.0.1:8385" },
+		);
+
+		expect(loaded.device.baseUrl).toBe("http://127.0.0.1:8385");
+		expect(loaded.deviceFromData).toBe(false);
+		expect(loaded.rewrite).toBe(true);
 	});
 
 	it("turns 2.4.0's untouched default into Syncthing's default address", () => {
-		const { settings } = parseSettings({
-			configuration: {
-				url: { protocol: "http", ip_address: "localhost", port: 8384 },
-			},
-		});
+		const { device } = parseSettings(
+			{ configuration: { url: { protocol: "http", ip_address: "localhost", port: 8384 } } },
+			null,
+		);
 
-		expect(settings.baseUrl).toBe(DEFAULT_BASE_URL);
+		expect(device.baseUrl).toBe(DEFAULT_BASE_URL);
 	});
 
 	it("keeps any other localhost address as typed", () => {
-		const { settings } = parseSettings({
-			configuration: {
-				url: { protocol: "http", ip_address: "localhost", port: 8385 },
-			},
-		});
+		const { device } = parseSettings(
+			{ configuration: { url: { protocol: "http", ip_address: "localhost", port: 8385 } } },
+			null,
+		);
 
-		expect(settings.baseUrl).toBe("http://localhost:8385");
-	});
-
-	it("brackets an IPv6 address saved by 2.4.0", () => {
-		const { settings } = parseSettings({
-			configuration: { url: { protocol: "http", ip_address: "::1", port: 8384 } },
-		});
-
-		expect(settings.baseUrl).toBe("http://[::1]:8384");
+		expect(device.baseUrl).toBe("http://localhost:8385");
 	});
 
 	it("salvages a 2.4.0 host field that also held a port or a path", () => {
 		const parse = (ip_address: string) =>
-			parseSettings({ configuration: { url: { protocol: "https", ip_address, port: 8384 } } })
-				.settings.baseUrl;
+			parseSettings(
+				{ configuration: { url: { protocol: "https", ip_address, port: 8384 } } },
+				null,
+			).device.baseUrl;
 
 		expect(parse("192.168.1.5:8443")).toBe("https://192.168.1.5:8443");
 		expect(parse("sync.example.org:443")).toBe("https://sync.example.org");
@@ -93,23 +100,22 @@ describe("parseSettings", () => {
 	});
 
 	it("keeps an unusable saved address as it was, and says why", () => {
-		const { settings, legacy, problem } = parseSettings({
+		const { device, problem } = parseSettings(null, {
 			baseUrl: "http://user:pw@host:8384",
 		});
 
-		expect(settings.baseUrl).toBe("http://user:pw@host:8384");
-		expect(legacy).toBe(false);
+		expect(device.baseUrl).toBe("http://user:pw@host:8384");
 		expect(problem).toContain("Remove the user name and password");
 		expect(problem).not.toContain("pw");
 	});
 
-	it("keeps an unusable 2.4.0 address in the new format when rewriting", () => {
-		const { settings, legacy, problem } = parseSettings({
-			configuration: { url: { protocol: "http", ip_address: "my nas", port: 8384 } },
-		});
+	it("keeps an unusable 2.4.0 address in the new format", () => {
+		const { device, problem } = parseSettings(
+			{ configuration: { url: { protocol: "http", ip_address: "my nas", port: 8384 } } },
+			null,
+		);
 
-		expect(settings.baseUrl).toBe("http://my nas:8384");
-		expect(legacy).toBe(true);
+		expect(device.baseUrl).toBe("http://my nas:8384");
 		expect(problem).toContain("is not a host name");
 	});
 });

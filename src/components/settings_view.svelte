@@ -13,7 +13,7 @@
 	export let parent: SyncthingSettingTab;
 	let hasSyncthing = true;
 	let apiInputType = "password";
-	let baseUrl = parent.plugin.settings.baseUrl;
+	let baseUrl = parent.plugin.device.baseUrl;
 	const savedUrl = parseBaseUrl(baseUrl);
 	let baseUrlError = savedUrl instanceof Failure ? savedUrl.message : "";
 
@@ -21,18 +21,27 @@
 		hasSyncthing = await parent.syncthingController.hasSyncthing();
 	});
 
+	let apiKey = parent.plugin.getApiKey();
+
 	async function getAPIkey() {
-		parent.syncthingController.getAPIKey().then((key) => {
-			if (key instanceof Failure) {
-				new Notice(key.message);
-				return;
-			}
-			parent.plugin.settings.api_key = key;
-			parent.plugin.saveSettings();
-		});
+		const key = await parent.syncthingController.getAPIKey();
+		if (key instanceof Failure) {
+			new Notice(key.message);
+			return;
+		}
+		apiKey = key;
 	}
 
-	async function setBaseUrl(input: HTMLInputElement) {
+	function storeApiKey(key: string) {
+		try {
+			parent.plugin.setApiKey(key);
+			apiKey = key;
+		} catch (error) {
+			new Notice(`Could not store the API key in Obsidian's keychain: ${error}`);
+		}
+	}
+
+	function setBaseUrl(input: HTMLInputElement) {
 		const parsed = parseBaseUrl(input.value);
 		if (parsed instanceof Failure) {
 			baseUrlError = parsed.message;
@@ -41,8 +50,8 @@
 		baseUrlError = "";
 		baseUrl = parsed;
 		input.value = parsed;
-		parent.plugin.settings.baseUrl = parsed;
-		await parent.plugin.saveSettings();
+		parent.plugin.device.baseUrl = parsed;
+		parent.plugin.saveDeviceSettings();
 	}
 </script>
 
@@ -94,21 +103,20 @@
 <!-- API Key setting -->
 <ObsidianSettingsItem name="Syncthing API Key" heading={true}>
 	<svelte:fragment slot="description">
-		Add your Syncthing API key here for the plugin to work.
+		The API key of the Syncthing on this device, from its GUI under
+		Actions → Settings → General. It is kept in Obsidian's keychain on this
+		device only, so each device can use its own key.
 	</svelte:fragment>
 	<svelte:fragment slot="control">
 		<input
 			type={apiInputType}
 			name="apikey"
 			id="apikey"
-			value={parent.plugin.settings.api_key}
+			value={apiKey}
 			placeholder="Enter your API key here..."
-			on:change={async (event) => {
-				parent.plugin.settings.api_key = event.currentTarget.value;
-				await parent.plugin.saveSettings();
-			}}
+			on:change={(event) => storeApiKey(event.currentTarget.value.trim())}
 		/>
-		{#if !parent.plugin.settings.api_key}
+		{#if !apiKey}
 			<button on:click={getAPIkey}> Get API key </button>
 		{:else}
 			<button
@@ -124,10 +132,7 @@
 				{/if}
 			</button>
 			<button
-				on:click={async () => {
-					parent.plugin.settings.api_key = "";
-					await parent.plugin.saveSettings();
-				}}
+				on:click={() => storeApiKey("")}
 			>
 				<ObsidianLucideIcon name="eraser" />
 			</button>
@@ -189,7 +194,7 @@
 <ObsidianSettingsItem name="Syncthing URL" heading={true} />
 <ObsidianSettingsItem
 	name="Syncthing URL"
-	description="Where Syncthing's GUI is served, including any reverse-proxy path, for example https://example.org/syncthing. The plugin sends its API requests there."
+	description="Where Syncthing's GUI is served for this device, including any reverse-proxy path, for example https://example.org/syncthing. The plugin sends its API requests there."
 >
 	<div slot="control" class="base-url">
 		<input
@@ -217,7 +222,7 @@
 		slot="control"
 		class="mod-cta"
 		on:click={() => {
-			const url = parseBaseUrl(parent.plugin.settings.baseUrl);
+			const url = parseBaseUrl(parent.plugin.device.baseUrl);
 			if (url instanceof Failure) {
 				new Notice(url.message);
 				return;
