@@ -84,6 +84,20 @@ On Desktop, it should be straightforward if you have the CLI installed. Otherwis
 
 Each device keeps its own Syncthing URL and API key, because each device runs its own Syncthing. The API key is stored in Obsidian's keychain and the URL in the vault's local storage, both on that device only. Neither is written to the plugin's `data.json`, which Syncthing syncs to your other devices. This needs Obsidian 1.11.4 or later. Version 2.4.0 and earlier kept one API key and URL for all devices in `data.json`. Each device takes them over when it updates, and they stay in `data.json` until you remove them in the plugin settings, once every device runs the new version. The GUI user name and password that 2.4.0 saved are removed at once, because nothing uses them any more.
 
+### Desktop
+
+The plugin talks to Syncthing's REST API at the Syncthing URL, `http://127.0.0.1:8384` by default; a Syncthing behind a reverse proxy can be reached with its full URL, such as `https://example.org/syncthing`. "Get API key" reads the key with the Syncthing program. The plugin looks for the syncthing-macos app, then for `syncthing` on the `PATH`; when Obsidian cannot find it, for example in a Snap or Flatpak sandbox or on Windows, set the path to the program in the settings.
+
+### Android
+
+Conflicts are shown and resolved from the files in your vault, so they work without a connection to Syncthing.
+
+[Syncthing-Fork](https://github.com/researchxxl/syncthing-android) is the maintained Syncthing app for Android; the official app was discontinued in 2024. It serves its GUI and API at `https://127.0.0.1:8384`, the plugin's default on Android, and always over HTTPS: Syncthing answers `http://` with a redirect to `https://`. Its certificate is self-signed, and Obsidian has been reported to refuse it ([#102](https://github.com/LBF38/obsidian-syncthing-integration/issues/102)), in which case the plugin cannot reach Syncthing-Fork and says so. To connect anyway, point the plugin at a Syncthing served over HTTPS with a trusted certificate, for example behind a reverse proxy. Syncthing-Fork shows its API key in its settings, as "Syncthing API Key (click to copy)".
+
+### iOS
+
+Conflicts are shown and resolved from the files in your vault. The plugin does not connect to a Syncthing app on the device; its settings can point to a Syncthing elsewhere, served over HTTPS with a trusted certificate.
+
 <details>
 <summary>Click here to see an example of the configuration settings</summary>
 

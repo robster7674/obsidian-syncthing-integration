@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { Notice, Platform } from "obsidian";
 	import { Failure } from "src/models/failures";
-	import { DEFAULT_BASE_URL, parseBaseUrl, sendsKeyInClear } from "src/settings";
+	import {
+		ANDROID_BASE_URL,
+		defaultBaseUrl,
+		parseBaseUrl,
+		sendsKeyInClear,
+	} from "src/settings";
 	import { ConfigurationModal } from "src/views/configuration_modal";
 	import { ObsidianLogo, SyncthingLogo } from "src/views/logos";
 	import { type SyncthingSettingTab } from "src/views/settings_tab";
@@ -17,9 +22,21 @@
 	const savedUrl = parseBaseUrl(baseUrl);
 	let baseUrlError = savedUrl instanceof Failure ? savedUrl.message : "";
 
-	onMount(async () => {
+	async function checkSyncthing() {
+		if (!Platform.isDesktopApp) return;
 		hasSyncthing = await parent.syncthingController.hasSyncthing();
-	});
+	}
+	onMount(checkSyncthing);
+
+	let cliPath = parent.plugin.device.cliPath;
+
+	function setCliPath(input: HTMLInputElement) {
+		cliPath = input.value.trim();
+		input.value = cliPath;
+		parent.plugin.device.cliPath = cliPath;
+		parent.plugin.saveDeviceSettings();
+		void checkSyncthing();
+	}
 
 	let apiKey = parent.plugin.getApiKey();
 
@@ -64,6 +81,7 @@
 		input.value = parsed;
 		parent.plugin.device.baseUrl = parsed;
 		parent.plugin.saveDeviceSettings();
+		void checkSyncthing();
 	}
 </script>
 
@@ -88,26 +106,38 @@
 </ObsidianSettingsItem>
 
 <!-- Syncthing ERROR NOT FOUND -->
-{#if !hasSyncthing}
+{#if Platform.isDesktopApp && !hasSyncthing}
 	<ObsidianSettingsItem
 		heading={true}
 		error={true}
 		name="Syncthing is not found"
 	>
 		<svelte:fragment slot="description">
-			Syncthing is not installed or not found on your device. Please
-			install it at the following URL:
+			Neither the Syncthing program nor its API answered. Install
+			Syncthing from
 			<a href="https://syncthing.net/downloads" target="_blank">
 				https://syncthing.net/downloads
-			</a>
+			</a>, set the path to its program, or check the URL and API key below.
 		</svelte:fragment>
+		<button slot="control" on:click={checkSyncthing}>Check again</button>
 	</ObsidianSettingsItem>
-	<ObsidianSettingsItem
-		name="Retry"
-		description="If you want to retry connecting, after setting the API key. This might resolve the issue."
-	>
-		<svelte:fragment slot="control">
-			<button class="mod-cta">Connect to Syncthing via API.</button>
+{/if}
+
+<!-- Mobile -->
+{#if Platform.isMobileApp}
+	<ObsidianSettingsItem name="On mobile" heading={true}>
+		<svelte:fragment slot="description">
+			Conflicts are shown and resolved from the files in your vault, so
+			they work without a connection to Syncthing.
+			{#if Platform.isIosApp}
+				On iOS the plugin does not connect to a Syncthing app on the
+				device. The settings below can point to a Syncthing elsewhere,
+				served over HTTPS with a trusted certificate.
+			{:else}
+				Syncthing-Fork serves its API at {ANDROID_BASE_URL} with a
+				self-signed certificate, which Obsidian may refuse. A Syncthing
+				elsewhere, served over HTTPS with a trusted certificate, works.
+			{/if}
 		</svelte:fragment>
 	</ObsidianSettingsItem>
 {/if}
@@ -185,6 +215,18 @@
 </ObsidianSettingsItem>
 
 {#if Platform.isDesktopApp}
+	<ObsidianSettingsItem
+		name="Syncthing program"
+		description="The path to the Syncthing program on this device, used to read the API key. Leave it empty to use the Syncthing app on macOS or syncthing on the PATH."
+	>
+		<input
+			slot="control"
+			type="text"
+			placeholder="syncthing"
+			value={cliPath}
+			on:change={(event) => setCliPath(event.currentTarget)}
+		/>
+	</ObsidianSettingsItem>
 	<ObsidianSettingsItem name="Syncthing CLI Status">
 		<svelte:fragment slot="control">
 			<button
@@ -192,7 +234,7 @@
 					parent.syncthingController
 						.getCLIStatus()
 						.then((status) => {
-							new Notice(`Syncthing Ping : ${status}`);
+							new Notice(status);
 						})
 						.catch((error) => {
 							new Notice((error as Error).message);
@@ -205,15 +247,6 @@
 	</ObsidianSettingsItem>
 {/if}
 
-<!-- Mobile settings -->
-{#if Platform.isMobileApp}
-	<ObsidianSettingsItem
-		name="Warning"
-		description="The following settings are in beta. All plugin's features may not currently be available on mobile."
-		error={true}
-	/>
-{/if}
-
 <!-- Syncthing URL -->
 <ObsidianSettingsItem name="Syncthing URL" heading={true} />
 <ObsidianSettingsItem
@@ -223,7 +256,7 @@
 	<div slot="control" class="base-url">
 		<input
 			type="url"
-			placeholder={DEFAULT_BASE_URL}
+			placeholder={defaultBaseUrl()}
 			value={baseUrl}
 			aria-invalid={baseUrlError !== ""}
 			on:change={(event) => setBaseUrl(event.currentTarget)}
@@ -302,32 +335,6 @@
 			}}
 			slot="control"
 		/>
-	</ObsidianSettingsItem>
-{/if}
-
-<!-- Open Mobile app -->
-{#if Platform.isMobileApp}
-	<ObsidianSettingsItem name="Open Mobile app" heading={true} />
-	<ObsidianSettingsItem
-		name="Open Syncthing mobile app"
-		description="Open the Syncthing mobile app, if not it opens the Google Play Store page."
-	>
-		<svelte:fragment slot="control">
-			<button
-				on:click={() => {
-					if (!Platform.isAndroidApp) {
-						new Notice(
-							"The feature is not implemented for your platform. Please open the Syncthing app for your platform. You can create an issue on GitHub if you want to request this feature.",
-							5000,
-						);
-						return;
-					}
-					parent.plugin.syncthingFromAndroid.openSyncthing();
-				}}
-			>
-				Open Syncthing on Mobile.
-			</button>
-		</svelte:fragment>
 	</ObsidianSettingsItem>
 {/if}
 

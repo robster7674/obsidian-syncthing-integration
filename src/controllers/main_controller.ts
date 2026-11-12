@@ -1,5 +1,4 @@
 import { Platform, TFile } from "obsidian";
-import { type SyncthingFromAndroid } from "src/data/syncthing_android_datasource";
 import { type SyncthingFromCLI } from "src/data/syncthing_local_datasource";
 import { type SyncthingFromREST } from "src/data/syncthing_remote_datasource";
 import type SyncthingPlugin from "src/main";
@@ -34,10 +33,6 @@ export class SyncthingController {
 		 */
 		public syncthingFromREST: SyncthingFromREST,
 		/**
-		 * Android datasource to Syncthing
-		 */
-		public syncthingFromAndroid: SyncthingFromAndroid,
-		/**
 		 * The plugin instance.
 		 * To make it easier to call plugin's methods.
 		 * @see https://docs.obsidian.md/Reference/TypeScript+API/Plugin/Plugin
@@ -63,32 +58,18 @@ export class SyncthingController {
 	}
 
 	/**
-	 * Checks if Syncthing is installed on the system.
+	 * Checks whether Syncthing can be reached on desktop: its program, or its REST API.
 	 */
 	async hasSyncthing(): Promise<boolean> {
-		// Mobile support
-		if (Platform.isAndroidApp) {
-			return await this.syncthingFromAndroid.hasSyncthing();
-		} else if (Platform.isIosApp) {
-			// IOS not supported.
-			return false;
-		}
-		// Desktop support
-		return await this.syncthingFromCLI
-			.getVersion()
-			.then((version) => {
-				return true;
-			})
-			.catch(async (error) => {
-				return await this.syncthingFromREST
-					.ping()
-					.then((response) => {
-						return true;
-					})
-					.catch((error) => {
-						return false;
-					});
-			});
+		const answers = (check: () => Promise<unknown>) =>
+			check().then(
+				() => true,
+				() => false
+			);
+		return (
+			(await answers(() => this.syncthingFromCLI.getVersion())) ||
+			answers(() => this.syncthingFromREST.ping())
+		);
 	}
 
 	/**
@@ -202,7 +183,9 @@ export class SyncthingController {
 			try {
 				apiKey = await this.syncthingFromCLI.getAPIkey();
 			} catch (error) {
-				return new CliFailure("Error getting API key.");
+				return error instanceof CliFailure
+					? error
+					: new CliFailure(`Could not get the API key: ${error}`);
 			}
 			if (apiKey) {
 				try {
@@ -230,19 +213,5 @@ export class SyncthingController {
 	 */
 	async getFolders(): Promise<SyncthingFolder[]> {
 		return await this.syncthingFromREST.getAllFolders();
-	}
-
-	/**
-	 * Starts the Syncthing service.
-	 */
-	async startSyncthing(): Promise<boolean> {
-		return this.syncthingFromCLI.startSyncthing();
-	}
-
-	/**
-	 * Stops the Syncthing service.
-	 */
-	async stopSyncthing(): Promise<boolean> {
-		return this.syncthingFromCLI.stopSyncthing();
 	}
 }
