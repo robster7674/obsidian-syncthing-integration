@@ -31,14 +31,15 @@
 		});
 	}
 
-	async function setBaseUrl(text: string) {
-		const parsed = parseBaseUrl(text);
+	async function setBaseUrl(input: HTMLInputElement) {
+		const parsed = parseBaseUrl(input.value);
 		if (parsed instanceof Failure) {
 			baseUrlError = parsed.message;
 			return;
 		}
 		baseUrlError = "";
 		baseUrl = parsed;
+		input.value = parsed;
 		parent.plugin.settings.baseUrl = parsed;
 		await parent.plugin.saveSettings();
 	}
@@ -195,7 +196,7 @@
 			placeholder={DEFAULT_BASE_URL}
 			value={baseUrl}
 			aria-invalid={baseUrlError !== ""}
-			on:change={(event) => setBaseUrl(event.currentTarget.value)}
+			on:change={(event) => setBaseUrl(event.currentTarget)}
 		/>
 		{#if baseUrlError}
 			<span class="mod-warning">{baseUrlError}</span>

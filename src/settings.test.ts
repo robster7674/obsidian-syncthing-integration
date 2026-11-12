@@ -78,13 +78,24 @@ describe("parseSettings", () => {
 		expect(settings.baseUrl).toBe("http://[::1]:8384");
 	});
 
-	it("replaces an unusable saved address, says so, and asks for a rewrite", () => {
+	it("salvages a 2.4.0 host field that also held a port or a path", () => {
+		const parse = (ip_address: string) =>
+			parseSettings({ configuration: { url: { protocol: "https", ip_address, port: 8384 } } })
+				.settings.baseUrl;
+
+		expect(parse("192.168.1.5:8443")).toBe("https://192.168.1.5:8443");
+		expect(parse("sync.example.org/syncthing")).toBe(
+			"https://sync.example.org:8384/syncthing",
+		);
+	});
+
+	it("replaces an unusable saved address in memory only, and says so", () => {
 		const { settings, legacy, problem } = parseSettings({
 			baseUrl: "http://user:pw@host:8384",
 		});
 
 		expect(settings.baseUrl).toBe(DEFAULT_BASE_URL);
-		expect(legacy).toBe(true);
+		expect(legacy).toBe(false);
 		expect(problem).toContain("Remove the user name and password");
 		expect(problem).not.toContain("pw");
 	});
@@ -120,6 +131,8 @@ describe("sendsKeyInClear", () => {
 		["http://127.0.0.1:8384", false],
 		["http://localhost:8384", false],
 		["http://[::1]:8384", false],
+		["http://127.0.0.2:8384", false],
+		["http://localhost.:8384", false],
 		["https://example.org/syncthing", false],
 		["http://192.168.1.5:8384", true],
 	])("%s: %s", (url, expected) => {

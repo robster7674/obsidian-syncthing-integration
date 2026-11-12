@@ -139,7 +139,7 @@ describe("SyncthingFromREST.ping", () => {
 		expect(error).not.toHaveBeenCalled();
 	});
 
-	it.each([[{}], [null], [{ ping: "nope" }]])(
+	it.each([[{}], [null], [[]], [{ ping: "nope" }]])(
 		"says the URL is wrong when the JSON is not a ping answer: %j",
 		async (body) => {
 			mockRequestUrl.mockResolvedValue(response(body));
@@ -149,6 +149,13 @@ describe("SyncthingFromREST.ping", () => {
 			});
 		},
 	);
+
+	it("says the URL is wrong when a list holds something other than Syncthing entries", async () => {
+		mockRequestUrl.mockResolvedValue(response([{ unrelated: true }]));
+
+		await expect(rest.getAllFolders()).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getDevices()).rejects.toBeInstanceOf(RestFailure);
+	});
 
 	it("says the URL is wrong when a list endpoint does not return a list", async () => {
 		mockRequestUrl.mockResolvedValue(response({}));
@@ -162,6 +169,15 @@ describe("endpointUrl", () => {
 	it("joins a base URL with a trailing slash and an endpoint with a query", () => {
 		expect(endpointUrl("https://example.org/st/", "/rest/events?since=4")).toBe(
 			"https://example.org/st/rest/events?since=4",
+		);
+	});
+
+	it("sends localhost as 127.0.0.1 on mobile only", () => {
+		expect(endpointUrl("http://localhost:8385", "/rest/system/ping", true)).toBe(
+			"http://127.0.0.1:8385/rest/system/ping",
+		);
+		expect(endpointUrl("http://localhost:8385", "/rest/system/ping")).toBe(
+			"http://localhost:8385/rest/system/ping",
 		);
 	});
 

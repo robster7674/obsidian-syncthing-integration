@@ -4,12 +4,12 @@ export class Failure {
 
 export class RestFailure extends Failure {
 	constructor(message?: string) {
-		super(message ? message : "Failed to get configuration from REST API");
+		super(message ? message : "The request to Syncthing's REST API failed.");
 	}
 }
 export class CliFailure extends Failure {
 	constructor(message?: string) {
-		super(message ? message : "Failed to get configuration from CLI");
+		super(message ? message : "The Syncthing command failed.");
 	}
 }
 

@@ -1,3 +1,4 @@
+import { isRecord } from "./controllers/utils";
 import { Failure } from "./models/failures";
 
 /** Syncthing's default GUI and REST API address. */
@@ -14,7 +15,9 @@ export interface SyncthingPluginSettings {
  * Reads the settings saved by any version of the plugin.
  * Versions up to 2.4.0 saved the address as `configuration.url` and kept GUI
  * credentials, which are no longer used.
- * @returns the settings, and whether `data` holds fields or values that saving drops.
+ * @returns the settings, and whether `data` holds fields that saving drops.
+ * An unusable saved address is replaced by the default in memory only, so the
+ * saved value stays on disk until the user sets another one.
  */
 export function parseSettings(data: unknown): {
 	settings: SyncthingPluginSettings;
@@ -40,9 +43,9 @@ export function parseSettings(data: unknown): {
 	} else {
 		settings.baseUrl = baseUrl;
 	}
-	const legacy =
-		problem !== undefined ||
-		["configuration", "gui_username", "gui_password"].some((key) => key in saved);
+	const legacy = ["configuration", "gui_username", "gui_password"].some(
+		(key) => key in saved,
+	);
 	return { settings, legacy, problem };
 }
 
@@ -80,27 +83,33 @@ export function parseBaseUrl(text: string): string | Failure {
  */
 export function sendsKeyInClear(baseUrl: string): boolean {
 	const url = new URL(baseUrl);
+	return url.protocol === "http:" && !isLoopback(url.hostname);
+}
+
+function isLoopback(hostname: string): boolean {
 	return (
-		url.protocol === "http:" &&
-		!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+		/^localhost\.?$/i.test(hostname) ||
+		/^127(\.\d{1,3}){3}$/.test(hostname) ||
+		hostname === "[::1]"
 	);
 }
 
 /**
- * Converts the address saved by 2.4.0. Its untouched default,
- * `http://localhost:8384`, becomes Syncthing's default address
- * {@link DEFAULT_BASE_URL}, which 2.4.0 already used on mobile; any other
- * address is kept as typed.
+ * Converts the address saved by 2.4.0, whose host field also accepted a
+ * port or a path. Its untouched default, `http://localhost:8384`, becomes
+ * Syncthing's default address {@link DEFAULT_BASE_URL}.
  */
-function legacyBaseUrl(url: Record<string, unknown>): string | Failure {
-	const protocol = url.protocol === "https" ? "https" : "http";
-	const host = typeof url.ip_address === "string" ? url.ip_address : "";
-	const port = typeof url.port === "number" ? `:${url.port}` : "";
-	const bracketed = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-	const typed = `${protocol}://${bracketed}${port}`;
+function legacyBaseUrl(saved: Record<string, unknown>): string | Failure {
+	const protocol = saved.protocol === "https" ? "https" : "http";
+	const host = typeof saved.ip_address === "string" ? saved.ip_address.trim() : "";
+	const ipv6 = (host.match(/:/g) ?? []).length > 1 && !host.startsWith("[");
+	let url: URL;
+	try {
+		url = new URL(`${protocol}://${ipv6 ? `[${host}]` : host}`);
+	} catch {
+		return new Failure(`"${host}" is not a host name or address.`);
+	}
+	if (!url.port && typeof saved.port === "number") url.port = String(saved.port);
+	const typed = (url.origin + url.pathname).replace(/\/+$/, "");
 	return parseBaseUrl(typed === "http://localhost:8384" ? DEFAULT_BASE_URL : typed);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,4 +1,5 @@
-import { requestUrl, type RequestUrlResponse } from "obsidian";
+import { Platform, requestUrl, type RequestUrlResponse } from "obsidian";
+import { isRecord } from "src/controllers/utils";
 import type SyncthingPlugin from "src/main";
 import { type SyncthingDevice } from "src/models/entities";
 import { RestFailure } from "src/models/failures";
@@ -32,9 +33,13 @@ export class SyncthingFromREST {
 	async getAllFolders(): Promise<SyncthingFolderModel[]> {
 		const folders = await this.requestEndpoint("/rest/config/folders");
 		if (!Array.isArray(folders)) throw this.notSyncthing();
-		return folders.map((folder) =>
-			SyncthingFolderModel.fromJSON(JSON.stringify(folder))
-		);
+		try {
+			return folders.map((folder) =>
+				SyncthingFolderModel.fromJSON(JSON.stringify(folder))
+			);
+		} catch {
+			throw this.notSyncthing();
+		}
 	}
 
 	/**
@@ -59,9 +64,13 @@ export class SyncthingFromREST {
 	async getDevices(): Promise<SyncthingDeviceModel[]> {
 		const devices = await this.requestEndpoint("/rest/config/devices");
 		if (!Array.isArray(devices)) throw this.notSyncthing();
-		return devices.map((device) =>
-			SyncthingDeviceModel.fromJSON(JSON.stringify(device))
-		);
+		try {
+			return devices.map((device) =>
+				SyncthingDeviceModel.fromJSON(JSON.stringify(device))
+			);
+		} catch {
+			throw this.notSyncthing();
+		}
 	}
 
 	/**
@@ -71,7 +80,11 @@ export class SyncthingFromREST {
 	 * @throws {RestFailure} with a message saying what to check.
 	 */
 	private async requestEndpoint(endpoint: string): Promise<unknown> {
-		const url = endpointUrl(this.plugin.settings.baseUrl, endpoint);
+		const url = endpointUrl(
+			this.plugin.settings.baseUrl,
+			endpoint,
+			Platform.isMobileApp
+		);
 		let response: RequestUrlResponse;
 		try {
 			response = await requestUrl({
@@ -111,16 +124,19 @@ export class SyncthingFromREST {
 	}
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
 /**
  * Joins a Syncthing base URL and an endpoint, so `https://host/syncthing` and
  * `/rest/system/ping` give `https://host/syncthing/rest/system/ping`.
+ * On mobile, `localhost` is sent as `127.0.0.1`, which keeps what 2.4.0 did
+ * for mobile requests (added in upstream #104, which does not record why).
  */
-export function endpointUrl(baseUrl: string, endpoint: string): string {
+export function endpointUrl(
+	baseUrl: string,
+	endpoint: string,
+	mobile = false
+): string {
 	const url = new URL(baseUrl);
+	if (mobile && url.hostname === "localhost") url.hostname = "127.0.0.1";
 	const queryStart = endpoint.indexOf("?");
 	const path = queryStart < 0 ? endpoint : endpoint.slice(0, queryStart);
 	url.pathname = url.pathname.replace(/\/+$/, "") + path;

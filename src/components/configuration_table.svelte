@@ -18,8 +18,13 @@
 	let devices: SyncthingDevice[] = [];
 	let thisDevice: SyncthingDevice | undefined = undefined;
 	onMount(async () => {
-		folders = await parent.plugin.syncthingController.getFolders();
-		devices = await parent.plugin.syncthingController.getDevices();
+		try {
+			folders = await parent.plugin.syncthingController.getFolders();
+			devices = await parent.plugin.syncthingController.getDevices();
+		} catch (error) {
+			new Notice((error as Error).message);
+			return;
+		}
 		thisDevice = devices.first();
 	});
 </script>
