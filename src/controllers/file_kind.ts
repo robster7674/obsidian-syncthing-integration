@@ -26,12 +26,17 @@ export async function comparableAsText(
 			return `${file.name} is larger than ${MAX_TEXT_DIFF_BYTES / 1024 / 1024} MB, so it is not compared line by line.`;
 		}
 	}
-	for (const file of files) {
-		if (TEXT_EXTENSIONS.has(file.extension.toLowerCase())) continue;
-		const start = new Uint8Array(await app.vault.readBinary(file)).subarray(0, SNIFF_BYTES);
-		if (!looksLikeText(start)) {
-			return `${file.name} is not a text file, so it is not compared line by line.`;
-		}
+	// The vault reads whole files only; they are at most MAX_TEXT_DIFF_BYTES here.
+	const binary = await Promise.all(
+		files.map(async (file) => {
+			if (TEXT_EXTENSIONS.has(file.extension.toLowerCase())) return false;
+			const start = new Uint8Array(await app.vault.readBinary(file)).subarray(0, SNIFF_BYTES);
+			return !looksLikeText(start);
+		})
+	);
+	const index = binary.indexOf(true);
+	if (index >= 0) {
+		return `${files[index].name} is not a text file, so it is not compared line by line.`;
 	}
 	return true;
 }

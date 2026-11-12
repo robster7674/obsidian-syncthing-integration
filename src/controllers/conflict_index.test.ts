@@ -65,3 +65,23 @@ describe("ConflictIndex", () => {
 		expect(index.conflictsOf("b/Note.md")).toEqual([early]);
 	});
 });
+
+describe("ConflictIndex with folders", () => {
+	it("drops the conflicts of a deleted folder and moves those of a renamed one", async () => {
+		const { TFolder } = await import("obsidian");
+		const { index, files } = setup(["b/Note.md", CONFLICT]);
+		index.conflictsOf("b/Note.md");
+		const folder = new TFolder();
+		folder.path = "c";
+		const moved = files[1];
+		Object.assign(moved, { path: "c/Note.sync-conflict-20220101-000000-BBBBBBB.md" });
+		folder.children = [moved];
+
+		index.renamed(folder, "b");
+		expect(index.conflictsOf("b/Note.md")).toEqual([]);
+		expect(index.conflictsOf("c/Note.md")).toEqual([moved]);
+
+		index.deleted(folder);
+		expect(index.all().conflicts.size).toBe(0);
+	});
+});

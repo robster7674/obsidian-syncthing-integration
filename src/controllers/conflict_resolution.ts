@@ -1,5 +1,6 @@
 import { type App, normalizePath, type TFile } from "obsidian";
 import { type ConflictFilename } from "src/models/entities";
+import { folderOf } from "./utils";
 
 /**
  * Resolves Syncthing conflicts. Every action moves the content it replaces
@@ -20,13 +21,13 @@ export class ConflictResolver {
 	/**
 	 * Keeps the conflict: its bytes replace the original's, which go to the trash.
 	 * The original keeps its path, so links to it are unaffected.
-	 * @param expectedOriginal the original's text as the user saw it; if it changed since, nothing is replaced.
+	 * @param expectedOriginal the original as the user saw it, as text or, for a file not shown as text, its size and modification time; if it changed since, nothing is replaced.
 	 * @returns whether a previous version was put in the trash (not when both files were identical).
 	 */
 	async keepConflict(
 		original: TFile,
 		conflict: TFile,
-		expectedOriginal?: string
+		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
 		return this.replace(
 			original,
@@ -72,7 +73,7 @@ export class ConflictResolver {
 	 * @returns the conflict's new path.
 	 */
 	async keepBoth(conflict: TFile, properties: ConflictFilename): Promise<string> {
-		const folder = conflict.path.slice(0, conflict.path.length - conflict.name.length);
+		const folder = folderOf(conflict);
 		const extension = properties.extension ? `.${properties.extension}` : "";
 		const date = `${properties.date.slice(0, 4)}-${properties.date.slice(4, 6)}-${properties.date.slice(6)} ${properties.time}`;
 		const from = properties.modifiedBy ? `from ${properties.modifiedBy}, ` : "";
@@ -106,7 +107,7 @@ export class ConflictResolver {
 		conflict: TFile,
 		content: ArrayBuffer,
 		backupLabel: string,
-		expectedOriginal?: string
+		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
 		const vault = this.app.vault;
 		const changedMeanwhile = () =>
@@ -118,8 +119,7 @@ export class ConflictResolver {
 		if (
 			changed &&
 			expectedOriginal !== undefined &&
-			withoutBom(new TextDecoder().decode(previous)) !==
-				withoutBom(expectedOriginal)
+			!matches(original, previous, expectedOriginal)
 		) {
 			throw changedMeanwhile();
 		}
@@ -169,6 +169,23 @@ export class ConflictResolver {
 			throw error;
 		}
 	}
+}
+
+/** The original as the user saw it: its text, or its size and modification time. */
+export type ExpectedOriginal = string | { size: number; mtime: number };
+
+function matches(
+	original: TFile,
+	content: ArrayBuffer,
+	expected: ExpectedOriginal
+): boolean {
+	if (typeof expected !== "string") {
+		return (
+			content.byteLength === expected.size &&
+			original.stat.mtime === expected.mtime
+		);
+	}
+	return withoutBom(new TextDecoder().decode(content)) === withoutBom(expected);
 }
 
 function withoutBom(text: string): string {

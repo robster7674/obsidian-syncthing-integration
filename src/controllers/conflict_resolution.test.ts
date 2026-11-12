@@ -286,6 +286,21 @@ describe("ConflictResolver with an expected original", () => {
 	});
 });
 
+describe("ConflictResolver with a file not shown as text", () => {
+	it("refuses to replace an original whose size or time changed since it was shown", async () => {
+		const { memory, resolver } = setup();
+		const original = memory.file(ORIGINAL);
+		const shown = { size: 5, mtime: original.stat.mtime };
+
+		await expect(
+			resolver.keepConflict(original, memory.file(CONFLICT), { ...shown, mtime: 1 }),
+		).rejects.toThrow("changed while resolving");
+		await resolver.keepConflict(original, memory.file(CONFLICT), shown);
+
+		expect(memory.content(ORIGINAL)).toBe("remote");
+	});
+});
+
 describe("ConflictResolver.keepBoth", () => {
 	const properties = {
 		filename: "Note",

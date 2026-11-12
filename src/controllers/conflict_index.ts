@@ -1,4 +1,4 @@
-import { type TAbstractFile, TFile, type Vault } from "obsidian";
+import { type TAbstractFile, TFile, TFolder, type Vault } from "obsidian";
 import { Failure } from "src/models/failures";
 import { originalPathOf } from "./utils";
 
@@ -42,16 +42,28 @@ export class ConflictIndex {
 		this.add(file);
 	}
 
-	/** Follows a file deleted from the vault. */
+	/** Follows a file or folder deleted from the vault, with everything in it. */
 	deleted(file: TAbstractFile) {
-		if (this.built) this.drop(file.path);
+		if (this.built) this.dropTree(file.path);
 	}
 
-	/** Follows a file renamed or moved in the vault. */
+	/** Follows a file or folder renamed or moved in the vault, with everything in it. */
 	renamed(file: TAbstractFile, oldPath: string) {
 		if (!this.built) return;
-		this.drop(oldPath);
+		this.dropTree(oldPath);
+		this.addTree(file);
+	}
+
+	private dropTree(path: string) {
+		const prefix = `${path}/`;
+		for (const listed of [...this.listed.keys()]) {
+			if (listed === path || listed.startsWith(prefix)) this.drop(listed);
+		}
+	}
+
+	private addTree(file: TAbstractFile) {
 		if (file instanceof TFile) this.add(file);
+		else if (file instanceof TFolder) file.children.forEach((child) => this.addTree(child));
 	}
 
 	private build() {

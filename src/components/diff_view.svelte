@@ -3,7 +3,10 @@
 	import { EditorState } from "@codemirror/state";
 	import { EditorView, basicSetup } from "codemirror";
 	import { Notice, type TFile } from "obsidian";
-	import { ConflictResolver } from "src/controllers/conflict_resolution";
+	import {
+		ConflictResolver,
+		type ExpectedOriginal,
+	} from "src/controllers/conflict_resolution";
 	import { comparableAsText } from "src/controllers/file_kind";
 	import { markdownPreview } from "src/controllers/markdown_preview";
 	import { Failure } from "src/models/failures";
@@ -35,8 +38,8 @@
 		await showConflict(currentConflict);
 	});
 
-	/** The original's text as the diff shows it, so a change made since is not overwritten. */
-	let shownOriginal: string | undefined;
+	/** The original as it is shown, so a change made since is not overwritten. */
+	let shownOriginal: ExpectedOriginal | undefined;
 	/**
 	 * `true` when the pair is shown as a text diff, why it is compared by its
 	 * details only, or `undefined` until that is known.
@@ -74,6 +77,8 @@
 		revision++;
 		loading = true;
 		asText = undefined;
+		shownOriginal = undefined;
+		editor?.setState(EditorState.create({ doc: "" }));
 		const request = ++diffRequest;
 		try {
 			const comparable = await comparableAsText(
@@ -84,8 +89,8 @@
 			if (request !== diffRequest) return;
 			if (comparable !== true) {
 				asText = comparable;
-				shownOriginal = undefined;
-				editor?.setState(EditorState.create({ doc: "" }));
+				const { size, mtime } = parentModal.originalFile.stat;
+				shownOriginal = { size, mtime };
 				loading = false;
 				return;
 			}
