@@ -13,18 +13,19 @@
 	parent.titleEl.setText("Syncthing Configuration");
 	parent.titleEl.style.textAlign = "center";
 
-	let syncthingBaseUrl = `${parent.plugin.settings.configuration.url?.protocol}://${parent.plugin.settings.configuration.url?.ip_address}:${parent.plugin.settings.configuration.url?.port}/`;
-	console.log(syncthingBaseUrl);
 	// TODO: refactor this to use Svelte stores.
 	let folders: SyncthingFolder[] = [];
 	let devices: SyncthingDevice[] = [];
 	let thisDevice: SyncthingDevice | undefined = undefined;
 	onMount(async () => {
-		folders = await parent.plugin.syncthingController.getFolders();
-		devices = await parent.plugin.syncthingController.getDevices();
+		try {
+			folders = await parent.plugin.syncthingController.getFolders();
+			devices = await parent.plugin.syncthingController.getDevices();
+		} catch (error) {
+			new Notice((error as Error).message);
+			return;
+		}
 		thisDevice = devices.first();
-		console.log("Folders: ", folders);
-		console.log("Devices: ", devices);
 	});
 </script>
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform, requestUrl } from "obsidian";
+import { requestUrl } from "obsidian";
 import { RestFailure } from "src/models/failures";
 import { readFixtureJson } from "../../test/helpers/fixtures";
 import { asPlugin, makePlugin } from "../../test/helpers/plugin";
@@ -7,7 +7,7 @@ import {
 	SyncthingDeviceModel,
 	SyncthingFolderModel,
 } from "../models/models";
-import { SyncthingFromREST } from "./syncthing_remote_datasource";
+import { endpointUrl, SyncthingFromREST } from "./syncthing_remote_datasource";
 
 const mockRequestUrl = vi.mocked(requestUrl);
 
@@ -55,36 +55,145 @@ describe("SyncthingFromREST.ping", () => {
 
 		expect(mockRequestUrl).toHaveBeenCalledWith(
 			expect.objectContaining({
-				url: "http://localhost:8384/rest/system/ping",
+				url: "http://127.0.0.1:8384/rest/system/ping",
 				method: "GET",
 				headers: expect.objectContaining({ "X-API-Key": "test-api-key" }),
 			}),
 		);
 	});
 
-	it("uses 127.0.0.1 on mobile when the host is localhost", async () => {
-		Platform.isMobileApp = true;
+	it("keeps the reverse-proxy path of the Syncthing URL", async () => {
+		plugin.settings.baseUrl = "https://example.org/syncthing";
 		mockRequestUrl.mockResolvedValue(response({ ping: "pong" }));
 
 		await rest.ping();
 
 		expect(mockRequestUrl).toHaveBeenCalledWith(
 			expect.objectContaining({
-				url: "http://127.0.0.1:8384/rest/system/ping",
+				url: "https://example.org/syncthing/rest/system/ping",
 			}),
 		);
 	});
 
-	it("rejects with a RestFailure on an HTTP error status", async () => {
-		mockRequestUrl.mockResolvedValue(response("Forbidden", 403));
+	it("sends only the API key header", async () => {
+		mockRequestUrl.mockResolvedValue(response({ ping: "pong" }));
+
+		await rest.ping();
+
+		expect(mockRequestUrl.mock.calls[0][0]).toMatchObject({
+			headers: { "X-API-Key": "test-api-key" },
+		});
+		expect(
+			Object.keys(
+				(mockRequestUrl.mock.calls[0][0] as { headers: object }).headers,
+			),
+		).toEqual(["X-API-Key"]);
+	});
+
+	it("says the API key was refused on HTTP 403", async () => {
+		mockRequestUrl.mockResolvedValue(response("CSRF Error", 403));
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("Access was refused (HTTP 403)"),
+		});
+	});
+
+	it("rejects with a RestFailure on another HTTP error status", async () => {
+		mockRequestUrl.mockResolvedValue(response("Not Found", 404));
 
 		await expect(rest.ping()).rejects.toBeInstanceOf(RestFailure);
 	});
 
-	it("rejects with a RestFailure when the request itself fails", async () => {
-		mockRequestUrl.mockRejectedValue(new Error("network down"));
+	it("says the URL is wrong when the answer is not JSON", async () => {
+		mockRequestUrl.mockResolvedValue({
+			...response("<a href=...>"),
+			get json(): unknown {
+				throw new SyntaxError("Unexpected token '<'");
+			},
+		});
 
-		await expect(rest.ping()).rejects.toThrow("network down");
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("Check the Syncthing URL"),
+		});
+	});
+
+	it("says Syncthing could not be reached when the request fails", async () => {
+		mockRequestUrl.mockRejectedValue(new Error("net::ERR_CONNECTION_REFUSED"));
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message:
+				"Could not reach Syncthing at http://127.0.0.1:8384: net::ERR_CONNECTION_REFUSED",
+		});
+	});
+
+	it("refuses an unusable Syncthing URL without sending anything", async () => {
+		plugin.settings.baseUrl = "http://user:pw@host:8384";
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("cannot be used"),
+		});
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+
+	it("logs neither the API key nor the response", async () => {
+		const log = vi.spyOn(console, "log");
+		const error = vi.spyOn(console, "error");
+		mockRequestUrl.mockResolvedValue(response({ ping: "pong" }));
+
+		await rest.ping();
+		mockRequestUrl.mockResolvedValue(response("Forbidden", 403));
+		await rest.ping().catch(() => undefined);
+
+		expect(log).not.toHaveBeenCalled();
+		expect(error).not.toHaveBeenCalled();
+	});
+
+	it.each([[{}], [null], [[]], [{ ping: "nope" }]])(
+		"says the URL is wrong when the JSON is not a ping answer: %j",
+		async (body) => {
+			mockRequestUrl.mockResolvedValue(response(body));
+
+			await expect(rest.ping()).rejects.toMatchObject({
+				message: expect.stringContaining("Check the Syncthing URL"),
+			});
+		},
+	);
+
+	it("says the URL is wrong when a list holds something other than Syncthing entries", async () => {
+		mockRequestUrl.mockResolvedValue(response([{ unrelated: true }]));
+
+		await expect(rest.getAllFolders()).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getDevices()).rejects.toBeInstanceOf(RestFailure);
+	});
+
+	it("says the URL is wrong when a list endpoint does not return a list", async () => {
+		mockRequestUrl.mockResolvedValue(response({}));
+
+		await expect(rest.getAllFolders()).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getDevices()).rejects.toBeInstanceOf(RestFailure);
+	});
+});
+
+describe("endpointUrl", () => {
+	it("joins a base URL with a trailing slash and an endpoint with a query", () => {
+		expect(endpointUrl("https://example.org/st/", "/rest/events?since=4")).toBe(
+			"https://example.org/st/rest/events?since=4",
+		);
+	});
+
+	it("sends localhost as 127.0.0.1 on mobile only", () => {
+		expect(endpointUrl("http://localhost:8385", "/rest/system/ping", true)).toBe(
+			"http://127.0.0.1:8385/rest/system/ping",
+		);
+		expect(endpointUrl("http://localhost:8385", "/rest/system/ping")).toBe(
+			"http://localhost:8385/rest/system/ping",
+		);
+	});
+
+	it("splits the query at its first question mark only", () => {
+		expect(endpointUrl("http://h", "/rest/db/file?folder=a&file=x?y.md")).toBe(
+			"http://h/rest/db/file?folder=a&file=x?y.md",
+		);
 	});
 });
 
@@ -100,7 +209,7 @@ describe("SyncthingFromREST.getAllFolders", () => {
 		expect(result[0].id).toBe("default");
 		expect(result[1].id).toBe("work");
 		expect(mockRequestUrl).toHaveBeenCalledWith(
-			expect.objectContaining({ url: "http://localhost:8384/rest/config/folders" }),
+			expect.objectContaining({ url: "http://127.0.0.1:8384/rest/config/folders" }),
 		);
 	});
 });
@@ -116,7 +225,7 @@ describe("SyncthingFromREST.getDevices", () => {
 		expect(result[0]).toBeInstanceOf(SyncthingDeviceModel);
 		expect(result[0].name).toBe("local-device");
 		expect(mockRequestUrl).toHaveBeenCalledWith(
-			expect.objectContaining({ url: "http://localhost:8384/rest/config/devices" }),
+			expect.objectContaining({ url: "http://127.0.0.1:8384/rest/config/devices" }),
 		);
 	});
 });
@@ -137,19 +246,3 @@ describe("SyncthingFromREST.getFoldersForDevice", () => {
 	});
 });
 
-describe("SyncthingFromREST.getConfiguration", () => {
-	it("requests the configuration endpoint", async () => {
-		// `requestUrl` resolves `json` to a parsed object, but
-		// `SyncthingConfigurationModel.fromJSON` expects a JSON *string*;
-		// this documents the current behaviour.
-		mockRequestUrl.mockResolvedValue(
-			response(readFixtureJson("config.json")),
-		);
-
-		await expect(rest.getConfiguration()).rejects.toThrow(SyntaxError);
-
-		expect(mockRequestUrl).toHaveBeenCalledWith(
-			expect.objectContaining({ url: "http://localhost:8384/rest/config" }),
-		);
-	});
-});

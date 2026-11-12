@@ -17,31 +17,12 @@ import { SyncthingStatusBar } from "./controllers/status_bar";
 import { SyncthingFromAndroid } from "./data/syncthing_android_datasource";
 import { SyncthingFromCLI } from "./data/syncthing_local_datasource";
 import { SyncthingFromREST } from "./data/syncthing_remote_datasource";
-import { type SyncthingConfiguration } from "./models/entities";
 import { ConflictsModal } from "./views/conflicts_modal";
 import { DiffModal } from "./views/diff_modal";
 import { SyncthingLogoSVG } from "./views/logos";
 import { SyncthingSettingTab } from "./views/settings_tab";
 import { ConfigurationModal } from "./views/configuration_modal";
-
-interface SyncthingPluginSettings {
-	api_key: string;
-	gui_username: string;
-	gui_password: string;
-	configuration: SyncthingConfiguration | Partial<SyncthingConfiguration>;
-	devMode: boolean;
-}
-
-const DEFAULT_SETTINGS: Partial<SyncthingPluginSettings> = {
-	configuration: {
-		url: {
-			protocol: "http",
-			ip_address: "localhost",
-			port: 8384,
-		},
-	},
-	devMode: false,
-};
+import { parseSettings, type SyncthingPluginSettings } from "./settings";
 
 export default class SyncthingPlugin extends Plugin {
 	PLUGIN_ID = "syncthing-integration";
@@ -131,12 +112,15 @@ export default class SyncthingPlugin extends Plugin {
 		this.pluginsElements.forEach((element) => element.remove());
 	}
 
+	/**
+	 * Loads the settings, and rewrites them at once when they still hold
+	 * fields of an earlier version, such as GUI credentials.
+	 */
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData(),
-		);
+		const { settings, legacy, problem } = parseSettings(await this.loadData());
+		this.settings = settings;
+		if (problem) new Notice(`Syncthing Integration: ${problem}`, 0);
+		if (legacy) await this.saveSettings();
 	}
 
 	async saveSettings() {
