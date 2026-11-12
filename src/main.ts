@@ -101,6 +101,15 @@ export default class SyncthingPlugin extends Plugin {
 			this.pluginsElements.push(this.syncStatusEl);
 		}
 		document.addEventListener("visibilitychange", this.onVisibilityChange);
+		// Keep the conflict index up to date, from the start: "create" also fires
+		// for every file as the vault loads, which fills in an index built early.
+		const index = this.syncthingController.conflictIndex;
+		this.registerEvent(this.app.vault.on("create", (file) => index.created(file)));
+		this.registerEvent(this.app.vault.on("delete", (file) => index.deleted(file)));
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => index.renamed(file, oldPath)),
+		);
+
 		// After the layout is ready, because "create" also fires for every file as the vault loads.
 		this.app.workspace.onLayoutReady(() => {
 			for (const name of ["create", "modify", "delete", "rename"] as const) {

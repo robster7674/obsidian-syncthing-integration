@@ -1,4 +1,6 @@
 import { type App, normalizePath, type TFile } from "obsidian";
+import { type ConflictFilename } from "src/models/entities";
+import { folderOf } from "./utils";
 
 /**
  * Resolves Syncthing conflicts. Every action moves the content it replaces
@@ -19,13 +21,13 @@ export class ConflictResolver {
 	/**
 	 * Keeps the conflict: its bytes replace the original's, which go to the trash.
 	 * The original keeps its path, so links to it are unaffected.
-	 * @param expectedOriginal the original's text as the user saw it; if it changed since, nothing is replaced.
+	 * @param expectedOriginal the original as the user saw it, as text or, for a file not shown as text, its size and modification time; if it changed since, nothing is replaced.
 	 * @returns whether a previous version was put in the trash (not when both files were identical).
 	 */
 	async keepConflict(
 		original: TFile,
 		conflict: TFile,
-		expectedOriginal?: string
+		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
 		return this.replace(
 			original,
@@ -61,16 +63,39 @@ export class ConflictResolver {
 	 * Refuses when anything is at that path, including a file outside the vault index or one differing only in case.
 	 */
 	async restoreAsOriginal(conflict: TFile, originalPath: string): Promise<void> {
-		const folded = originalPath.toLowerCase();
+		await this.renameToFreePath(conflict, originalPath);
+	}
+
+	/**
+	 * Keeps both versions: the conflict is renamed next to the original, so
+	 * Syncthing no longer sees it as a conflict, such as
+	 * `Note (conflict from ABCDEFG, 2022-01-01 120000).md`.
+	 * @returns the conflict's new path.
+	 */
+	async keepBoth(conflict: TFile, properties: ConflictFilename): Promise<string> {
+		const folder = folderOf(conflict);
+		const extension = properties.extension ? `.${properties.extension}` : "";
+		const date = `${properties.date.slice(0, 4)}-${properties.date.slice(4, 6)}-${properties.date.slice(6)} ${properties.time}`;
+		const from = properties.modifiedBy ? `from ${properties.modifiedBy}, ` : "";
+		const path = normalizePath(
+			`${folder}${properties.filename} (conflict ${from}${date})${extension}`
+		);
+		await this.renameToFreePath(conflict, path);
+		return path;
+	}
+
+	/** Renames `file` to `path`, refusing when anything is there, also differing only in case or outside the vault index. */
+	private async renameToFreePath(file: TFile, path: string): Promise<void> {
+		const folded = path.toLowerCase();
 		const taken =
 			this.app.vault
 				.getFiles()
-				.some((file) => file.path.toLowerCase() === folded) ||
-			(await this.app.vault.adapter.exists(originalPath));
+				.some((other) => other.path.toLowerCase() === folded) ||
+			(await this.app.vault.adapter.exists(path));
 		if (taken) {
-			throw new Error(`${originalPath} already exists.`);
+			throw new Error(`${path} already exists.`);
 		}
-		await this.app.fileManager.renameFile(conflict, originalPath);
+		await this.app.fileManager.renameFile(file, path);
 	}
 
 	/**
@@ -82,7 +107,7 @@ export class ConflictResolver {
 		conflict: TFile,
 		content: ArrayBuffer,
 		backupLabel: string,
-		expectedOriginal?: string
+		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
 		const vault = this.app.vault;
 		const changedMeanwhile = () =>
@@ -94,8 +119,7 @@ export class ConflictResolver {
 		if (
 			changed &&
 			expectedOriginal !== undefined &&
-			withoutBom(new TextDecoder().decode(previous)) !==
-				withoutBom(expectedOriginal)
+			!matches(original, previous, expectedOriginal)
 		) {
 			throw changedMeanwhile();
 		}
@@ -145,6 +169,23 @@ export class ConflictResolver {
 			throw error;
 		}
 	}
+}
+
+/** The original as the user saw it: its text, or its size and modification time. */
+export type ExpectedOriginal = string | { size: number; mtime: number };
+
+function matches(
+	original: TFile,
+	content: ArrayBuffer,
+	expected: ExpectedOriginal
+): boolean {
+	if (typeof expected !== "string") {
+		return (
+			content.byteLength === expected.size &&
+			original.stat.mtime === expected.mtime
+		);
+	}
+	return withoutBom(new TextDecoder().decode(content)) === withoutBom(expected);
 }
 
 function withoutBom(text: string): string {

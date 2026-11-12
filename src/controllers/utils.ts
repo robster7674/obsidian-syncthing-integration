@@ -170,8 +170,12 @@ export function isConflictFilename(filename: string): boolean {
 export function originalPathOf(file: TFile): string | Failure {
 	const properties = parseConflictFilename(file.name);
 	if (properties instanceof Failure) return properties;
-	const folder = file.path.slice(0, file.path.length - file.name.length);
-	return folder + properties.originalName;
+	return folderOf(file) + properties.originalName;
+}
+
+/** The folder of `file`, with a trailing `/`, or `""` at the vault's root. */
+export function folderOf(file: TFile): string {
+	return file.path.slice(0, file.path.length - file.name.length);
 }
 
 /**
