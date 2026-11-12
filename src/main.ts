@@ -14,7 +14,6 @@ import {
 	PluginDevModeController,
 } from "./controllers/plugin_dev_mode";
 import { SyncthingStatusBar } from "./controllers/status_bar";
-import { SyncthingFromAndroid } from "./data/syncthing_android_datasource";
 import { SyncthingFromCLI } from "./data/syncthing_local_datasource";
 import { SyncthingFromREST } from "./data/syncthing_remote_datasource";
 import { ConflictsModal } from "./views/conflicts_modal";
@@ -44,13 +43,11 @@ export default class SyncthingPlugin extends Plugin {
 	private takeOverPending = false;
 	private shownProblem?: string;
 	pluginsElements: HTMLElement[] = [];
-	syncthingFromCLI: SyncthingFromCLI = new SyncthingFromCLI();
+	syncthingFromCLI: SyncthingFromCLI = new SyncthingFromCLI(this);
 	syncthingFromREST: SyncthingFromREST = new SyncthingFromREST(this);
-	syncthingFromAndroid: SyncthingFromAndroid = new SyncthingFromAndroid();
 	syncthingController: SyncthingController = new SyncthingController(
 		this.syncthingFromCLI,
 		this.syncthingFromREST,
-		this.syncthingFromAndroid,
 		this,
 	);
 	devModeController: PluginDevModeController = new PluginDevModeController(

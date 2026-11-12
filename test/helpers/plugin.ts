@@ -74,7 +74,7 @@ export function makePlugin(
 		app,
 		vault,
 		settings: { devMode: settings.devMode ?? false },
-		device: { baseUrl: settings.baseUrl ?? DEFAULT_BASE_URL },
+		device: { baseUrl: settings.baseUrl ?? DEFAULT_BASE_URL, cliPath: "" },
 		apiKey: settings.apiKey ?? "",
 		getApiKey: () => plugin.apiKey,
 		setApiKey: vi.fn((key: string) => {
