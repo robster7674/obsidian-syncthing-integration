@@ -10,7 +10,13 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-function setup(content: string | undefined, vaultFolder: unknown = undefined) {
+const ROOT_FOLDER = {
+	folder: { id: "vault", label: "Vault", path: "/home/me/Vault" },
+	vaultPath: "",
+	chosen: false,
+};
+
+function setup(content: string | undefined, vaultFolder: unknown = ROOT_FOLDER) {
 	const files = new Map<string, string>();
 	if (content !== undefined) files.set(".stignore", content);
 	const parent = {
@@ -28,7 +34,9 @@ function setup(content: string | undefined, vaultFolder: unknown = undefined) {
 			},
 		},
 	} as unknown as SyncthingSettingTab;
-	const view = render(SyncthingIgnoreFiles, { props: { parent, vaultFolder } });
+	const view = render(SyncthingIgnoreFiles, {
+		props: { parent, vaultFolder: vaultFolder === "loading" ? undefined : vaultFolder },
+	});
 	return { files, ...view };
 }
 
@@ -83,6 +91,35 @@ describe("syncthing_ignore_files.svelte", () => {
 		expect(container.textContent).toContain("outside the vault");
 		expect(container.textContent).toContain("/Vault/");
 		expect(button(container, "Add pattern")).toBeUndefined();
+	});
+
+	it("applies quick edits one after another, so none is lost", async () => {
+		const { container, files } = setup("/a\n/b\n/c\n");
+		await vi.waitFor(() => expect(container.textContent).toContain("/c"));
+		const removeButton = (pattern: string) =>
+			Array.from(container.querySelectorAll(".setting-item"))
+				.find((item) => item.querySelector(".setting-item-name")?.textContent?.trim() === pattern)!
+				.querySelector("button")!;
+
+		await Promise.all([
+			fireEvent.click(removeButton("/a")),
+			fireEvent.click(removeButton("/b")),
+		]);
+
+		await vi.waitFor(() => expect(files.get(".stignore")).toBe("/c\n"));
+	});
+
+	it("waits for the folder before allowing edits", () => {
+		const { container } = setup("", "loading");
+
+		expect(container.textContent).toContain("Looking for the vault's Syncthing folder");
+		expect(button(container, "Add pattern")).toBeUndefined();
+	});
+
+	it("warns when the vault's place in a chosen folder is unknown", () => {
+		const { container } = setup("", { ...ROOT_FOLDER, vaultPath: undefined, chosen: true });
+
+		expect(container.textContent).toContain("Where the vault is in the chosen folder is unknown");
 	});
 
 	it("says which .stignore it edits when the folder is unknown", () => {

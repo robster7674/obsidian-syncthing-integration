@@ -17,6 +17,23 @@ describe("IgnoreFile", () => {
 		expect(added("// mine\r\n\r\n/a\r\n", "/b")).toBe("// mine\r\n\r\n/a\r\n/b\r\n");
 	});
 
+	it("keeps each line's own ending and a byte order mark", () => {
+		const text = "\uFEFF/a\n/b\r\n/c\r";
+
+		expect(added(text, "/d")).toBe("\uFEFF/a\n/b\r\n/c\r/d\r");
+		expect(IgnoreFile.parse(text).has("/a")).toBe(true);
+		expect(IgnoreFile.parse(text).remove("/a").toString()).toBe("\uFEFF/b\r\n/c\r");
+	});
+
+	it("escapes glob characters in a vault path", () => {
+		const file = IgnoreFile.parse("");
+
+		expect(file.patternFor("notes/[draft] *.md", false)).toBe("/notes/\\[draft\\] \\*.md");
+		expect(file.patternFor("a\\b.md", false)).toBe("/a\\\\b.md");
+		expect(file.patternFor("notes/{x}?.md", true)).toBe("/notes/|{x|}|?.md");
+		expect(IgnoreFile.parse("#escape=~\n").patternFor("a*.md", false)).toBe("/a~*.md");
+	});
+
 	it("adds a line break before appending to a file without a final one", () => {
 		expect(added("/a", "/b")).toBe("/a\n/b\n");
 	});

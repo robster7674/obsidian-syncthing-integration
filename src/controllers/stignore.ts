@@ -1,33 +1,57 @@
 import { Failure } from "src/models/failures";
 
+interface Line {
+	text: string;
+	/** The line break after it, `""` for a last line without one. */
+	eol: string;
+}
+
 /**
  * Edits the text of a `.stignore` file line by line, keeping its comments,
- * blank lines, order and line endings. Syncthing applies the first pattern
- * that matches, so new patterns go at the end, after any `!` exception.
+ * blank lines, order, byte order mark and each line's ending. Syncthing
+ * applies the first pattern that matches, so new patterns go at the end,
+ * after any `!` exception.
  * @see https://docs.syncthing.net/users/ignoring.html
  */
 export class IgnoreFile {
 	private constructor(
-		private lines: string[],
-		private eol: string,
-		private finalEol: boolean
+		private lines: Line[],
+		private bom: string
 	) {}
 
 	static parse(text: string): IgnoreFile {
-		const eol = text.includes("\r\n") ? "\r\n" : "\n";
-		const finalEol = text === "" || text.endsWith("\n");
-		const lines = text === "" ? [] : text.split(/\r?\n/);
-		if (finalEol && lines.length > 0) lines.pop();
-		return new IgnoreFile(lines, eol, finalEol);
+		const bom = text.startsWith("﻿") ? "﻿" : "";
+		const parts = text.slice(bom.length).split(/(\r\n|\n|\r)/);
+		const lines: Line[] = [];
+		for (let index = 0; index < parts.length; index += 2) {
+			lines.push({ text: parts[index], eol: parts[index + 1] ?? "" });
+		}
+		if (lines.at(-1)?.text === "" && lines.at(-1)?.eol === "") lines.pop();
+		return new IgnoreFile(lines, bom);
 	}
 
 	/** The patterns, without comments and blank lines. */
 	patterns(): string[] {
-		return this.lines.filter(isPattern);
+		return this.lines.map((line) => line.text).filter(isPattern);
 	}
 
 	has(pattern: string): boolean {
-		return this.lines.includes(pattern);
+		return this.lines.some((line) => line.text === pattern);
+	}
+
+	/**
+	 * The pattern that ignores exactly the vault file or folder at `path`,
+	 * anchored at the folder root, with glob characters escaped.
+	 * @param windows whether Syncthing runs on Windows, where its default escape character is `|`.
+	 */
+	patternFor(path: string, windows: boolean): string {
+		const escape = this.escapeCharacter() ?? (windows ? "|" : "\\");
+		const relative = path.replace(/^\/+/, "");
+		const special = (character: string) =>
+			"*?[]{}".includes(character) || character === escape;
+		return `/${Array.from(relative, (character) =>
+			special(character) ? escape + character : character
+		).join("")}`;
 	}
 
 	/**
@@ -45,21 +69,33 @@ export class IgnoreFile {
 				`${lines.filter(isPattern).join(", ")} is already in .stignore.`
 			);
 		}
-		return new IgnoreFile([...this.lines, ...added], this.eol, true);
+		const eol = [...this.lines].reverse().find((line) => line.eol)?.eol ?? "\n";
+		const kept = this.lines.map((line, index) =>
+			index === this.lines.length - 1 && !line.eol ? { ...line, eol } : line
+		);
+		return new IgnoreFile(
+			[...kept, ...added.map((text) => ({ text, eol }))],
+			this.bom
+		);
 	}
 
 	/** Removes every line that is exactly `pattern`. */
 	remove(pattern: string): IgnoreFile {
 		return new IgnoreFile(
-			this.lines.filter((line) => line !== pattern),
-			this.eol,
-			this.finalEol
+			this.lines.filter((line) => line.text !== pattern),
+			this.bom
 		);
 	}
 
 	toString(): string {
 		if (this.lines.length === 0) return "";
-		return this.lines.join(this.eol) + (this.finalEol ? this.eol : "");
+		return this.bom + this.lines.map((line) => line.text + line.eol).join("");
+	}
+
+	/** The character set by a `#escape=` line, if any. */
+	private escapeCharacter(): string | undefined {
+		const line = this.lines.find((candidate) => candidate.text.startsWith("#escape"));
+		return line?.text.replace(/^#escape\s*=?\s*/, "").trim().charAt(0) || undefined;
 	}
 }
 

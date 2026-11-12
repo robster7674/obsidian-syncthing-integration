@@ -28,11 +28,19 @@
 	let vaultFolder: VaultFolder | Failure | undefined;
 	let folderId = parent.plugin.device.folderId;
 
+	let folderRequest = 0;
+
+	/** Asks Syncthing for its folders; only the latest request's answer is kept. */
 	async function findFolder() {
+		const request = ++folderRequest;
+		vaultFolder = undefined;
 		try {
-			({ folders, vaultFolder } =
-				await parent.syncthingController.getVaultFolder());
+			const found = await parent.syncthingController.getVaultFolder();
+			if (request !== folderRequest) return;
+			({ folders, vaultFolder } = found);
 		} catch (error) {
+			if (request !== folderRequest) return;
+			folders = [];
 			vaultFolder = new Failure(
 				`The vault's Syncthing folder is unknown: ${(error as Error)?.message ?? error}`
 			);
@@ -44,7 +52,12 @@
 		folderId = id;
 		parent.plugin.device.folderId = id;
 		parent.plugin.saveDeviceSettings();
-		void findFolder();
+		if (folders.length > 0) {
+			folderRequest++;
+			vaultFolder = parent.syncthingController.matchVaultFolder(folders);
+		} else {
+			void findFolder();
+		}
 	}
 
 	async function checkSyncthing() {
@@ -331,6 +344,12 @@
 			{vaultFolder.folder.path}{vaultFolder.vaultPath
 				? `, with the vault in ${vaultFolder.vaultPath}`
 				: ""}{vaultFolder.chosen ? " (chosen)" : " (found by its path)"}.
+			{#if vaultFolder.vaultPath === undefined}
+				<span class="mod-warning">
+					The vault's path is not inside this folder's path, so where the
+					vault is in the folder is unknown.
+				</span>
+			{/if}
 		{/if}
 	</svelte:fragment>
 	<select

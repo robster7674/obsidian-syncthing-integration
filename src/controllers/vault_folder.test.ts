@@ -59,8 +59,24 @@ describe("findVaultFolder", () => {
 	it("uses the folder chosen for this device, even without the vault's path", () => {
 		expect(findVaultFolder(FOLDERS, undefined, "sync", undefined)).toEqual({
 			folder: FOLDERS[1],
-			vaultPath: "",
+			vaultPath: undefined,
 			chosen: true,
+		});
+	});
+
+	it("does not place the vault at a chosen folder's root when its path is elsewhere", () => {
+		expect(
+			findVaultFolder(FOLDERS, "/home/me/Documents/Vault", "sync", "/home/me"),
+		).toMatchObject({ folder: FOLDERS[1], vaultPath: undefined, chosen: true });
+	});
+
+	it("prefers the folder with the same case when two differ only in case", () => {
+		Platform.isMacOS = true;
+		const lower = folder("lower", "/Vols/notes");
+		const upper = folder("upper", "/Vols/Notes");
+
+		expect(findVaultFolder([lower, upper], "/Vols/Notes", "", undefined)).toMatchObject({
+			folder: upper,
 		});
 	});
 

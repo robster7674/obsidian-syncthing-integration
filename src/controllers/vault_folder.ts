@@ -5,8 +5,11 @@ import { Failure } from "src/models/failures";
 /** The Syncthing folder that holds the vault. */
 export interface VaultFolder {
 	folder: SyncthingFolder;
-	/** Where the vault is inside the folder, `""` when the vault is the folder's root. */
-	vaultPath: string;
+	/**
+	 * Where the vault is inside the folder, `""` when the vault is the folder's
+	 * root, or `undefined` when a chosen folder's path does not show it.
+	 */
+	vaultPath: string | undefined;
 	/** Whether the user chose the folder rather than it being found by path. */
 	chosen: boolean;
 }
@@ -43,7 +46,7 @@ export function findVaultFolder(
 			);
 		}
 		const inside = vaultPath ? relativeInside(folder.path, vaultPath, home) : undefined;
-		return { folder, vaultPath: inside ?? "", chosen: true };
+		return { folder, vaultPath: inside, chosen: true };
 	}
 	if (!vaultPath) {
 		return new Failure(
@@ -56,7 +59,12 @@ export function findVaultFolder(
 			(match): match is { folder: SyncthingFolder; inside: string } =>
 				match.inside !== undefined
 		)
-		.sort((a, b) => a.inside.length - b.inside.length);
+		.sort(
+			(a, b) =>
+				a.inside.length - b.inside.length ||
+				Number(!sameCase(a.folder.path, vaultPath, home)) -
+					Number(!sameCase(b.folder.path, vaultPath, home))
+		);
 	if (matches.length === 0) {
 		return new Failure(
 			`No Syncthing folder holds the vault at ${vaultPath}. Share it with Syncthing, or choose its folder in the settings.`
@@ -82,6 +90,16 @@ function relativeInside(
 	if (a === b) return "";
 	const prefix = a.endsWith("/") ? a : `${a}/`;
 	return b.startsWith(prefix) ? child.slice(prefix.length) : undefined;
+}
+
+/**
+ * Whether `root` holds `path` with the same case, which decides between
+ * folders that differ only in case on a case-sensitive volume.
+ */
+function sameCase(root: string, path: string, home: string | undefined): boolean {
+	const parent = normalise(expandHome(root, home));
+	const child = normalise(path);
+	return child === parent || child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
 }
 
 function expandHome(path: string, home: string | undefined): string {

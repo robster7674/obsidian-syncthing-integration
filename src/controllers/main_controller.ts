@@ -213,14 +213,16 @@ export class SyncthingController {
 		vaultFolder: VaultFolder | Failure;
 	}> {
 		const folders = await this.syncthingFromREST.getAllFolders();
-		return {
+		return { folders, vaultFolder: this.matchVaultFolder(folders) };
+	}
+
+	/** Finds the vault's folder among `folders` already fetched, without asking Syncthing. */
+	matchVaultFolder(folders: SyncthingFolder[]): VaultFolder | Failure {
+		return findVaultFolder(
 			folders,
-			vaultFolder: findVaultFolder(
-				folders,
-				vaultBasePath(this.plugin.app),
-				this.plugin.device.folderId
-			),
-		};
+			vaultBasePath(this.plugin.app),
+			this.plugin.device.folderId
+		);
 	}
 
 	/**
