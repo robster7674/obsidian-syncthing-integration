@@ -88,6 +88,10 @@ Each device keeps its own Syncthing URL and API key, because each device runs it
 
 The plugin talks to Syncthing's REST API at the Syncthing URL, `http://127.0.0.1:8384` by default; a Syncthing behind a reverse proxy can be reached with its full URL, such as `https://example.org/syncthing`. "Get API key" reads the key with the Syncthing program. The plugin looks for the syncthing-macos app, then for `syncthing` on the `PATH`; when Obsidian cannot find it, for example in a Snap or Flatpak sandbox or on Windows, set the path to the program in the settings.
 
+### Sync status
+
+With an API key set, the status bar shows the vault's sync state on desktop: Synced, Syncing *n* files, Waiting for *device*, Not on *device* (an offline device that lacks changes), Scanning, Sync paused or Sync error. "Synced" means every device sharing the vault's folder has all of it, as far as this device's Syncthing knows, so it is safe to close Obsidian. Click it, or run "Check whether it is safe to close", to see why. The plugin follows Syncthing's event stream instead of polling, and starts no request while Obsidian's window is hidden. Paused devices, and devices that do not share the folder back, are not counted.
+
 ### Vault folder and ignored files
 
 The plugin finds the Syncthing folder that holds the vault by its path, or you can choose it in the settings, for example on iOS, where the vault's path cannot be compared. The ignored-files editor changes the `.stignore` at the vault's root: it adds new patterns at the end, so earlier ones and `!` exceptions still apply first, and keeps comments and line endings. When the Syncthing folder starts above the vault, its `.stignore` is outside the vault, and the settings say so instead. "Ignore Obsidian's per-device files" adds the window layout files, `workspace.json` and `workspace-mobile.json`, which conflict whenever two devices have the vault open. Syncthing does not sync `.stignore`, so set it up on each device.

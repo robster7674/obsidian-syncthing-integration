@@ -14,6 +14,11 @@ import {
 	PluginDevModeController,
 } from "./controllers/plugin_dev_mode";
 import { SyncthingStatusBar } from "./controllers/status_bar";
+import {
+	describe,
+	type SyncStatus,
+	SyncStatusMonitor,
+} from "./controllers/sync_status";
 import { SyncthingFromCLI } from "./data/syncthing_local_datasource";
 import { SyncthingFromREST } from "./data/syncthing_remote_datasource";
 import { ConflictsModal } from "./views/conflicts_modal";
@@ -54,6 +59,20 @@ export default class SyncthingPlugin extends Plugin {
 		this,
 	);
 	statusBar?: SyncthingStatusBar;
+	/** The vault's sync state, while it is followed. */
+	syncStatus?: SyncStatus;
+	private syncStatusEl?: HTMLElement;
+	private following = false;
+	private onVisibilityChange = () => {
+		if (document.visibilityState === "visible") this.syncStatusMonitor.visible();
+	};
+	syncStatusMonitor = new SyncStatusMonitor({
+		rest: this.syncthingFromREST,
+		findFolder: async () =>
+			(await this.syncthingController.getVaultFolder()).vaultFolder,
+		onChange: (status) => this.showSyncStatus(status),
+		hidden: () => document.visibilityState === "hidden",
+	});
 
 	async onload() {
 		// For devMode issue. (adding/removing commands when loading/unloading plugin)
@@ -72,6 +91,17 @@ export default class SyncthingPlugin extends Plugin {
 			this.statusBar.onload();
 			this.pluginsElements.push(this.statusBar.status_bar);
 		}
+
+		// Sync status, followed while an API key is set.
+		if (!Platform.isMobileApp) {
+			this.syncStatusEl = this.addStatusBarItem();
+			this.syncStatusEl.addClass("mod-clickable");
+			this.syncStatusEl.onClickEvent(() => this.showSafeToClose());
+			this.pluginsElements.push(this.syncStatusEl);
+		}
+		document.addEventListener("visibilitychange", this.onVisibilityChange);
+		this.following = true;
+		this.followSyncStatus();
 
 		// Settings tab
 		if (SyncthingPlugin.loadCount === 1) {
@@ -121,6 +151,9 @@ export default class SyncthingPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.following = false;
+		this.syncStatusMonitor.stop();
+		document.removeEventListener("visibilitychange", this.onVisibilityChange);
 		this.statusBar?.onunload();
 		this.pluginsElements.forEach((element) => element.remove());
 	}
@@ -196,18 +229,15 @@ export default class SyncthingPlugin extends Plugin {
 	async onExternalSettingsChange() {
 		const shown = this.shownSettings();
 		await this.loadSettings();
-		if (
-			this.settingTab?.containerEl.isConnected &&
-			this.shownSettings() !== shown
-		) {
-			this.settingTab.display();
-		}
+		if (this.shownSettings() === shown) return;
+		this.followSyncStatus();
+		if (this.settingTab?.containerEl.isConnected) this.settingTab.display();
 	}
 
 	private shownSettings(): string {
 		return JSON.stringify([
 			this.getApiKey(),
-			this.device?.baseUrl,
+			this.device,
 			this.hasSharedSettings(),
 			this.settings?.devMode,
 		]);
@@ -219,6 +249,41 @@ export default class SyncthingPlugin extends Plugin {
 
 	saveDeviceSettings() {
 		this.app.saveLocalStorage(DEVICE_SETTINGS_KEY, this.device);
+		this.followSyncStatus();
+	}
+
+	/** (Re)starts following the sync state with the current settings, when an API key is set. */
+	private followSyncStatus() {
+		if (!this.following) return;
+		this.syncStatusMonitor.stop();
+		this.showSyncStatus(undefined);
+		if (this.getApiKey()) this.syncStatusMonitor.start();
+	}
+
+	private showSyncStatus(status: SyncStatus | undefined) {
+		this.syncStatus = status;
+		if (!this.syncStatusEl) return;
+		if (!status) {
+			this.syncStatusEl.empty();
+			return;
+		}
+		const { text, detail } = describe(status);
+		this.syncStatusEl.setText(text);
+		this.syncStatusEl.setAttribute("aria-label", detail);
+		this.syncStatusEl.toggleClass("mod-warning", status.kind !== "synced");
+	}
+
+	/** Says whether every device has the vault, so Obsidian can be closed. */
+	showSafeToClose() {
+		if (!this.getApiKey()) {
+			new Notice("Set the Syncthing API key in the plugin settings to see the sync status.");
+			return;
+		}
+		new Notice(
+			this.syncStatus
+				? describe(this.syncStatus).detail
+				: "The sync status is not known yet. Try again in a moment.",
+		);
 	}
 
 	/** Whether `data.json` still holds the API key or URL that 2.4.0 shared between devices. */
@@ -253,6 +318,7 @@ export default class SyncthingPlugin extends Plugin {
 	setApiKey(key: string) {
 		this.app.secretStorage.setSecret(API_KEY_SECRET, key);
 		this.unmovedApiKey = undefined;
+		this.followSyncStatus();
 	}
 
 	// This method adds commands for the Syncthing Plugin
@@ -292,6 +358,11 @@ export default class SyncthingPlugin extends Plugin {
 
 					return false;
 				},
+			},
+			{
+				id: "syncthing-safe-to-close",
+				name: "Check whether it is safe to close",
+				callback: () => this.showSafeToClose(),
 			},
 			{
 				id: "syncthing-configuration-modal",

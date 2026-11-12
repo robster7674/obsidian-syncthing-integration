@@ -304,3 +304,64 @@ describe("SyncthingFromREST status endpoints", () => {
 		await expect(rest.getConnectedDevices()).rejects.toBeInstanceOf(RestFailure);
 	});
 });
+
+describe("SyncthingFromREST sync state endpoints", () => {
+	it("reads a folder's state, counting pull errors only once", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({ state: "idle", needFiles: 0, needBytes: 0, errors: 2, pullErrors: 2 }),
+		);
+
+		await expect(rest.getFolderStatus("my folder")).resolves.toEqual({
+			state: "idle",
+			needFiles: 0,
+			needBytes: 0,
+			errors: 2,
+			error: "",
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/db/status?folder=my%20folder",
+			}),
+		);
+	});
+
+	it("reads another device's completion of a folder", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({ completion: 99.5, needItems: 1, remoteState: "valid" }),
+		);
+
+		await expect(rest.getCompletion("vault", "AAA-BBB")).resolves.toEqual({
+			completion: 99.5,
+			needItems: 1,
+			remoteState: "valid",
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/db/completion?folder=vault&device=AAA-BBB",
+			}),
+		);
+	});
+
+	it("long-polls the events of the given types and drops malformed ones", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response([{ id: 3, type: "StateChanged", data: { to: "idle" } }, { id: "x" }]),
+		);
+
+		await expect(rest.getEvents(2, 60, ["StateChanged", "FolderSummary"])).resolves.toEqual([
+			{ id: 3, type: "StateChanged", data: { to: "idle" } },
+		]);
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/events?since=2&timeout=60&events=StateChanged,FolderSummary",
+			}),
+		);
+	});
+
+	it("says the URL is wrong when a state answer is not Syncthing's", async () => {
+		mockRequestUrl.mockResolvedValue(response({}));
+
+		await expect(rest.getFolderStatus("vault")).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getCompletion("vault", "A")).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getEvents(0, 0, [])).rejects.toBeInstanceOf(RestFailure);
+	});
+});

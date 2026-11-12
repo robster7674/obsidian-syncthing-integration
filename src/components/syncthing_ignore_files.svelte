@@ -18,8 +18,8 @@
 	} = $props();
 
 	const IGNORE_FILE = ".stignore";
-	const adapter = parent.app.vault.adapter;
-	const template = obsidianIgnoreTemplate(parent.app.vault.configDir);
+	const adapter = $derived(parent.app.vault.adapter);
+	const template = $derived(obsidianIgnoreTemplate(parent.app.vault.configDir));
 	let selectedFile = $state("");
 	let typedPattern = $state("");
 	let patterns: string[] = $state([]);

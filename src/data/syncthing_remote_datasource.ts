@@ -1,5 +1,12 @@
 import { Platform, requestUrl, type RequestUrlResponse } from "obsidian";
 import { isRecord } from "src/controllers/utils";
+import {
+	type Completion,
+	type FolderStatus,
+	parseCompletion,
+	parseFolderStatus,
+	type SyncthingEvent,
+} from "src/models/sync_state";
 import { Failure } from "src/models/failures";
 import { parseBaseUrl } from "src/settings";
 import type SyncthingPlugin from "src/main";
@@ -68,6 +75,54 @@ export class SyncthingFromREST {
 			Object.entries(answer.connections)
 				.filter(([, connection]) => isRecord(connection) && connection.connected === true)
 				.map(([id]) => id)
+		);
+	}
+
+	/**
+	 * The sync state of a folder on this device.
+	 * @see https://docs.syncthing.net/rest/db-status-get.html
+	 */
+	async getFolderStatus(folderId: string): Promise<FolderStatus> {
+		const status = await this.requestEndpoint(
+			`/rest/db/status?folder=${encodeURIComponent(folderId)}`
+		);
+		const parsed = parseFolderStatus(status);
+		if (!parsed) throw this.notSyncthing();
+		return parsed;
+	}
+
+	/**
+	 * How much of a folder another device has, as this Syncthing knows it.
+	 * @see https://docs.syncthing.net/rest/db-completion-get.html
+	 */
+	async getCompletion(folderId: string, deviceId: string): Promise<Completion> {
+		const completion = await this.requestEndpoint(
+			`/rest/db/completion?folder=${encodeURIComponent(folderId)}&device=${encodeURIComponent(deviceId)}`
+		);
+		const parsed = parseCompletion(completion);
+		if (!parsed) throw this.notSyncthing();
+		return parsed;
+	}
+
+	/**
+	 * Waits up to `timeout` seconds for events of the given types after `since`.
+	 * @see https://docs.syncthing.net/rest/events-get.html
+	 */
+	async getEvents(
+		since: number,
+		timeout: number,
+		types: readonly string[]
+	): Promise<SyncthingEvent[]> {
+		const events = await this.requestEndpoint(
+			`/rest/events?since=${since}&timeout=${timeout}&events=${types.join(",")}`
+		);
+		if (!Array.isArray(events)) throw this.notSyncthing();
+		return events.filter(
+			(event): event is SyncthingEvent =>
+				isRecord(event) &&
+				typeof event.id === "number" &&
+				typeof event.type === "string" &&
+				isRecord(event.data)
 		);
 	}
 
