@@ -295,14 +295,11 @@
 <!-- Configuration display -->
 <ObsidianSettingsItem name="Syncthing Configuration" heading={true} />
 <ObsidianSettingsItem
-	name="In construction"
-	description="This part is in construction."
+	name="Folders and devices"
+	description="Show the folders and devices this device's Syncthing is set up with."
 >
 	<button
-		on:click={async (event) => {
-			new Notice("This part is in construction.");
-			new ConfigurationModal(parent.app, parent.plugin).open();
-		}}
+		on:click={() => new ConfigurationModal(parent.app, parent.plugin).open()}
 		slot="control"
 	>
 		<ObsidianLucideIcon name="cog" />

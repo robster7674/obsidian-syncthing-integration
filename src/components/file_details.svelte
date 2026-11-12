@@ -18,7 +18,3 @@
 		<li>Path: {file.path}</li>
 	</ul>
 </div>
-
-<style>
-	/* TODO */
-</style>
