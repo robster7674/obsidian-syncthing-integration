@@ -112,8 +112,71 @@ describe("SyncthingPlugin.loadSettings", () => {
 		expect(notices().map((notice) => notice.message)).toEqual([
 			expect.stringContaining("the one in data.json is used"),
 		]);
-		await expect(plugin.removeSharedSettings()).rejects.toThrow("keychain");
+		await expect(plugin.removeSharedSettings()).rejects.toThrow("still uses");
 		expect(saved()).toMatchObject({ api_key: "key-from-data-json" });
+	});
+
+	it("does not take the shared key back after the user cleared it", async () => {
+		const { plugin } = makeDevice(LEGACY_DATA);
+		await plugin.loadSettings();
+
+		plugin.setApiKey("");
+		await plugin.onExternalSettingsChange();
+
+		expect(plugin.getApiKey()).toBe("");
+	});
+
+	it("retries the take-over on the next load when the keychain refused it", async () => {
+		const { app, plugin } = makeDevice(LEGACY_DATA);
+		const setSecret = app.secretStorage.setSecret;
+		app.secretStorage.setSecret = vi.fn(() => {
+			throw new Error("Secure storage is not available.");
+		});
+		await plugin.loadSettings();
+		expect(app.loadLocalStorage(DEVICE_SETTINGS_KEY)).toBeNull();
+
+		app.secretStorage.setSecret = setSecret;
+		await plugin.loadSettings();
+
+		expect(app.secretStorage.getSecret(API_KEY_SECRET)).toBe("key-from-data-json");
+		await expect(plugin.removeSharedSettings()).resolves.toBeUndefined();
+	});
+
+	it("refuses to remove the shared URL while this device could not store its own", async () => {
+		const { app, plugin, saved } = makeDevice(LEGACY_DATA);
+		app.saveLocalStorage = vi.fn(() => {
+			throw new Error("QuotaExceededError");
+		});
+		await plugin.loadSettings();
+
+		await expect(plugin.removeSharedSettings()).rejects.toThrow("Syncthing URL");
+		expect(saved()).toMatchObject({ configuration: LEGACY_DATA.configuration });
+	});
+
+	it("keeps the shared fields when removing them could not be saved", async () => {
+		const { plugin, saved } = makeDevice(LEGACY_DATA);
+		await plugin.loadSettings();
+		plugin.saveData = vi.fn(async () => {
+			throw new Error("disk full");
+		});
+
+		await expect(plugin.removeSharedSettings()).rejects.toThrow("disk full");
+
+		expect(plugin.hasSharedSettings()).toBe(true);
+		expect(saved()).toEqual(SHARED_DATA);
+	});
+
+	it("says so when another device removed the key this device relied on", async () => {
+		const { app, plugin } = makeDevice(LEGACY_DATA);
+		app.secretStorage.setSecret = vi.fn(() => {
+			throw new Error("Secure storage is not available.");
+		});
+		await plugin.loadSettings();
+		plugin.loadData = vi.fn(async () => ({ devMode: true }));
+
+		await plugin.onExternalSettingsChange();
+
+		expect(notices().at(-1)?.message).toContain("removed by another device");
 	});
 
 	it("takes over the settings when another device syncs an old data.json", async () => {

@@ -40,6 +40,8 @@ export default class SyncthingPlugin extends Plugin {
 	private shared: Record<string, unknown> = {};
 	/** The API key in `data.json`, when the keychain refused it. */
 	private unmovedApiKey?: string;
+	/** Whether taking over the settings shared in `data.json` failed, so this device still needs them. */
+	private takeOverPending = false;
 	private shownProblem?: string;
 	pluginsElements: HTMLElement[] = [];
 	syncthingFromCLI: SyncthingFromCLI = new SyncthingFromCLI();
@@ -138,45 +140,80 @@ export default class SyncthingPlugin extends Plugin {
 			await this.loadData(),
 			this.app.loadLocalStorage(DEVICE_SETTINGS_KEY),
 		);
+		const lostUnmovedKey = this.unmovedApiKey && !loaded.sharedApiKey;
 		this.settings = loaded.settings;
 		this.device = loaded.device;
 		this.shared = loaded.shared;
 		this.unmovedApiKey = undefined;
+		this.takeOverPending = false;
 		if (loaded.problem && loaded.problem !== this.shownProblem) {
 			new Notice(`Syncthing Integration: ${loaded.problem}`, 0);
 		}
 		this.shownProblem = loaded.problem;
-		if (
-			loaded.sharedApiKey &&
-			!this.app.secretStorage.getSecret(API_KEY_SECRET)
-		) {
-			try {
-				this.setApiKey(loaded.sharedApiKey);
-			} catch (error) {
-				this.unmovedApiKey = loaded.sharedApiKey;
-				new Notice(
-					`Syncthing Integration: the API key could not be stored in Obsidian's keychain, so the one in data.json is used. ${error}`,
-					0,
-				);
-			}
+		if (lostUnmovedKey) {
+			new Notice(
+				"Syncthing Integration: the API key in data.json, which this device used, was removed by another device. Set the API key again.",
+				0,
+			);
 		}
-		if (loaded.deviceFromData) {
-			try {
-				this.saveDeviceSettings();
-			} catch (error) {
-				new Notice(
-					`Syncthing Integration: the Syncthing URL could not be stored on this device. ${error}`,
-					0,
-				);
-			}
-		}
+		if (loaded.takeOver) this.takeOverShared(loaded.sharedApiKey);
 		if (loaded.rewrite) await this.saveSettings();
 	}
 
-	/** Another device synced `data.json`, possibly still in an earlier format. */
+	/**
+	 * Stores the settings 2.4.0 shared in `data.json` as this device's own.
+	 * The device settings are written last: they mark the take-over as done,
+	 * so a failed step is retried on the next load and nothing is lost.
+	 */
+	private takeOverShared(sharedApiKey?: string) {
+		this.takeOverPending = true;
+		try {
+			if (sharedApiKey && !this.app.secretStorage.getSecret(API_KEY_SECRET)) {
+				this.setApiKey(sharedApiKey);
+			}
+		} catch (error) {
+			this.unmovedApiKey = sharedApiKey;
+			new Notice(
+				`Syncthing Integration: the API key could not be stored in Obsidian's keychain, so the one in data.json is used. ${error}`,
+				0,
+			);
+			return;
+		}
+		try {
+			this.saveDeviceSettings();
+		} catch (error) {
+			new Notice(
+				`Syncthing Integration: the Syncthing URL could not be stored on this device, so the one in data.json is used. ${error}`,
+				0,
+			);
+			return;
+		}
+		this.takeOverPending = false;
+	}
+
+	/**
+	 * Another device synced `data.json`, possibly still in an earlier format.
+	 * An open settings tab is redrawn only when what it shows changed, so
+	 * typing in it is not lost.
+	 */
 	async onExternalSettingsChange() {
+		const shown = this.shownSettings();
 		await this.loadSettings();
-		if (this.settingTab?.containerEl.isConnected) this.settingTab.display();
+		if (
+			this.settingTab?.containerEl.isConnected &&
+			this.shownSettings() !== shown
+		) {
+			this.settingTab.display();
+		}
+	}
+
+	private shownSettings(): string {
+		return JSON.stringify([
+			this.getApiKey(),
+			this.device?.baseUrl,
+			this.hasSharedSettings(),
+			this.settings?.devMode,
+		]);
 	}
 
 	async saveSettings() {
@@ -197,13 +234,13 @@ export default class SyncthingPlugin extends Plugin {
 	 * has taken them over. Refused while this device still depends on them.
 	 */
 	async removeSharedSettings() {
-		if (this.unmovedApiKey) {
+		if (this.takeOverPending) {
 			throw new Error(
-				"This device could not store the API key in Obsidian's keychain, so it still uses the one in data.json.",
+				"This device could not store its own API key or Syncthing URL, so it still uses the ones in data.json.",
 			);
 		}
+		await this.saveData({ ...this.settings });
 		this.shared = {};
-		await this.saveSettings();
 	}
 
 	/** This device's Syncthing API key, or `""` when none is set. */

@@ -45,8 +45,12 @@ export function parseSettings(
 ): {
 	settings: SyncthingPluginSettings;
 	device: DeviceSettings;
-	/** Device settings found only in `data.json`, which this device must now store. */
-	deviceFromData: boolean;
+	/**
+	 * Whether this device has not stored settings of its own yet and should
+	 * take over the ones 2.4.0 shared in `data.json`. Once it has stored them,
+	 * it ignores the shared ones, even when the user cleared its API key.
+	 */
+	takeOver: boolean;
 	/** The API key 2.4.0 left in `data.json`, which belongs in the keychain. */
 	sharedApiKey?: string;
 	/** The fields of 2.4.0 to keep in `data.json` for other devices. */
@@ -57,8 +61,8 @@ export function parseSettings(
 	problem?: string;
 } {
 	const saved = isRecord(data) ? data : {};
-	const deviceFromData =
-		!isRecord(storedDevice) && ("baseUrl" in saved || "configuration" in saved);
+	const takeOver =
+		!isRecord(storedDevice) && SHARED_FIELDS.some((key) => key in saved);
 	const source = isRecord(storedDevice) ? storedDevice : saved;
 	const { typed, parsed } =
 		typeof source.baseUrl === "string"
@@ -69,7 +73,7 @@ export function parseSettings(
 	return {
 		settings: { devMode: saved.devMode === true },
 		device: { baseUrl: parsed instanceof Failure ? typed : parsed },
-		deviceFromData,
+		takeOver,
 		sharedApiKey:
 			typeof saved.api_key === "string" && saved.api_key !== ""
 				? saved.api_key

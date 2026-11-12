@@ -156,7 +156,7 @@
 {#if hasSharedSettings}
 	<ObsidianSettingsItem
 		name="Settings shared by version 2.4.0"
-		description="data.json, which Syncthing syncs to all your devices, still holds the API key and Syncthing URL that version 2.4.0 shared. They stay there so that each device can take them over when it updates. Remove them once every device runs this version."
+		description="data.json, which Syncthing syncs to all your devices, still holds the API key and Syncthing URL that version 2.4.0 shared. They stay there so that each device can take them over when it updates. Remove them once every device shows this setting."
 	>
 		<button slot="control" on:click={removeSharedSettings}>
 			Remove from data.json

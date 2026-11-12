@@ -31,5 +31,6 @@ export class SyncthingSettingTab extends PluginSettingTab {
 	hide(): void {
 		if (this.view) void unmount(this.view);
 		this.view = undefined;
+		super.hide();
 	}
 }

@@ -12,7 +12,7 @@ describe("parseSettings", () => {
 		expect(parseSettings(null, null)).toEqual({
 			settings: { devMode: false },
 			device: { baseUrl: DEFAULT_BASE_URL },
-			deviceFromData: false,
+			takeOver: false,
 			sharedApiKey: undefined,
 			shared: {},
 			rewrite: false,
@@ -48,7 +48,7 @@ describe("parseSettings", () => {
 		expect(loaded).toMatchObject({
 			settings: { devMode: false },
 			device: { baseUrl: "https://192.168.1.5:8443" },
-			deviceFromData: true,
+			takeOver: true,
 			sharedApiKey: "key",
 			shared: {
 				api_key: "key",
@@ -68,7 +68,7 @@ describe("parseSettings", () => {
 		);
 
 		expect(loaded.device.baseUrl).toBe("http://127.0.0.1:8385");
-		expect(loaded.deviceFromData).toBe(false);
+		expect(loaded.takeOver).toBe(false);
 		expect(loaded.rewrite).toBe(false);
 	});
 
