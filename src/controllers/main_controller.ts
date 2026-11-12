@@ -235,11 +235,9 @@ export class SyncthingController {
 		otherDevices: SyncthingDevice[];
 		connected: Set<string>;
 	}> {
-		const [folders, devices, myID, connected] = await Promise.all([
+		const [folders, { devices, myID, connected }] = await Promise.all([
 			this.syncthingFromREST.getAllFolders(),
-			this.syncthingFromREST.getDevices(),
-			this.syncthingFromREST.getMyID(),
-			this.syncthingFromREST.getConnectedDevices(),
+			this.syncthingFromREST.getDeviceStates(),
 		]);
 		return {
 			folders,

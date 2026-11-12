@@ -101,12 +101,15 @@ export default class SyncthingPlugin extends Plugin {
 			this.pluginsElements.push(this.syncStatusEl);
 		}
 		document.addEventListener("visibilitychange", this.onVisibilityChange);
-		for (const name of ["create", "modify", "delete", "rename"] as const) {
-			this.registerEvent(
-				// @ts-expect-error The overloads differ only in the callback's arguments.
-				this.app.vault.on(name, () => this.syncStatusMonitor.vaultChanged()),
-			);
-		}
+		// After the layout is ready, because "create" also fires for every file as the vault loads.
+		this.app.workspace.onLayoutReady(() => {
+			for (const name of ["create", "modify", "delete", "rename"] as const) {
+				this.registerEvent(
+					// @ts-expect-error The overloads differ only in the callback's arguments.
+					this.app.vault.on(name, () => this.syncStatusMonitor.vaultChanged()),
+				);
+			}
+		});
 		// Followed on desktop only: on mobile the command reads it when asked.
 		this.following = !Platform.isMobileApp;
 		this.followSyncStatus();
@@ -285,6 +288,8 @@ export default class SyncthingPlugin extends Plugin {
 		if (!this.syncStatusEl) return;
 		if (!status) {
 			this.syncStatusEl.empty();
+			this.syncStatusEl.removeAttribute("aria-label");
+			this.syncStatusEl.removeClass("mod-warning");
 			return;
 		}
 		const { text, detail } = describe(status);

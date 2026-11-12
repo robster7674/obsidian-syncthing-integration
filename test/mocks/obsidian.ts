@@ -113,6 +113,9 @@ export class App {
 		getActiveFile: vi.fn((): TFile | null => null),
 		getLeaf: vi.fn(),
 		on: vi.fn(),
+		onLayoutReady: vi.fn((callback: () => unknown) => {
+			callback();
+		}),
 	};
 	fileManager = {};
 	secretStorage = new SecretStorage();

@@ -27,8 +27,7 @@ interface ControllerHarness {
 		ping: Mock;
 		getDevices: Mock;
 		getAllFolders: Mock;
-		getMyID: Mock;
-		getConnectedDevices: Mock;
+		getDeviceStates: Mock;
 	};
 	plugin: FakePlugin;
 }
@@ -42,8 +41,7 @@ function makeHarness(files: TFile[] = [], settings = {}): ControllerHarness {
 		ping: vi.fn(),
 		getDevices: vi.fn(),
 		getAllFolders: vi.fn(),
-		getMyID: vi.fn(),
-		getConnectedDevices: vi.fn(),
+		getDeviceStates: vi.fn(),
 	};
 	const plugin = makePlugin(files, settings);
 	const controller = new SyncthingController(
@@ -305,9 +303,11 @@ describe("SyncthingController.getOverview", () => {
 		const { controller, rest } = makeHarness();
 		const folders = [{ id: "default" }];
 		rest.getAllFolders.mockResolvedValue(folders);
-		rest.getDevices.mockResolvedValue([{ deviceID: "A" }, { deviceID: "B" }]);
-		rest.getMyID.mockResolvedValue("B");
-		rest.getConnectedDevices.mockResolvedValue(new Set(["A"]));
+		rest.getDeviceStates.mockResolvedValue({
+			devices: [{ deviceID: "A" }, { deviceID: "B" }],
+			myID: "B",
+			connected: new Set(["A"]),
+		});
 
 		await expect(controller.getOverview()).resolves.toEqual({
 			folders,

@@ -133,9 +133,8 @@ export interface MonitorDependencies {
 		| "getEvents"
 		| "getFolderStatus"
 		| "getCompletion"
-		| "getDevices"
-		| "getMyID"
-		| "getConnectedDevices"
+		| "getLastScan"
+		| "getDeviceStates"
 	>;
 	/** Finds the vault's folder; fetched again after Syncthing's configuration changes. */
 	findFolder: () => Promise<VaultFolder | Failure>;
@@ -160,10 +159,12 @@ export class SyncStatusMonitor {
 	private status?: FolderStatus;
 	private peers = new Map<string, Peer>();
 	private since = 0;
-	/** The vault changed after the last scan Syncthing started. */
-	private unscanned = false;
-	/** A scan started after the last change, so its end covers that change. */
-	private scanAfterChange = false;
+	/** When a file in the vault last changed. */
+	private lastChange?: number;
+	/** Changes up to this time are known to be scanned. */
+	private scannedUntil?: number;
+	/** When the scan in progress started. */
+	private scanStarted?: number;
 	private sleep: (ms: number) => Promise<void>;
 
 	constructor(private deps: MonitorDependencies) {
@@ -188,11 +189,28 @@ export class SyncStatusMonitor {
 		this.wake?.();
 	}
 
-	/** Called when a file in the vault changed, until Syncthing scans it. */
-	vaultChanged() {
-		this.unscanned = true;
-		this.scanAfterChange = false;
+	/** Called when a file in the vault changed, so it counts until Syncthing scans it. */
+	vaultChanged(at = Date.now()) {
+		this.lastChange = at;
 		this.emit();
+	}
+
+	/**
+	 * Whether the vault changed after the last scan known to cover it: one
+	 * that started after the change, or, from a snapshot, Syncthing's last
+	 * finished scan (which may have started just before the change, until the
+	 * watcher's next scan).
+	 */
+	private unscanned(): boolean {
+		return (
+			this.lastChange !== undefined &&
+			(this.scannedUntil === undefined || this.lastChange > this.scannedUntil)
+		);
+	}
+
+	private scanned(until: number | undefined) {
+		if (until === undefined) return;
+		this.scannedUntil = Math.max(this.scannedUntil ?? until, until);
 	}
 
 	/** Reads the state once, without following it. */
@@ -200,7 +218,7 @@ export class SyncStatusMonitor {
 		try {
 			const snapshot = await this.read(() => true);
 			if (snapshot instanceof Failure) return { kind: "unknown", message: snapshot.message };
-			return summarise(snapshot.status, [...snapshot.peers.values()], this.unscanned);
+			return summarise(snapshot.status, [...snapshot.peers.values()], this.unscanned());
 		} catch (error) {
 			return {
 				kind: "unknown",
@@ -225,19 +243,20 @@ export class SyncStatusMonitor {
 					snapshotNeeded = false;
 					retry = 1000;
 				}
-				const events = await this.deps.rest.getEvents(
+				const { events, lastId } = await this.deps.rest.getEvents(
 					this.since,
 					LONG_POLL_SECONDS,
 					EVENT_TYPES
 				);
 				if (!current()) return;
+				this.since = Math.max(this.since, lastId);
 				for (const event of events) {
-					this.since = Math.max(this.since, event.id);
 					if (this.apply(event) === "reload") snapshotNeeded = true;
 				}
 				if (events.length > 0 && !snapshotNeeded) this.emit();
 			} catch (error) {
 				if (!current()) return;
+				this.status = undefined;
 				this.deps.onChange({
 					kind: "unknown",
 					message: `Syncthing could not be asked: ${(error as Error)?.message ?? error}`,
@@ -260,8 +279,7 @@ export class SyncStatusMonitor {
 	 * @returns false when a newer run took over.
 	 */
 	private async snapshot(current: () => boolean): Promise<boolean> {
-		const latest = await this.deps.rest.getEvents(0, 0, EVENT_TYPES);
-		const since = latest.reduce((max, event) => Math.max(max, event.id), 0);
+		const { lastId: since } = await this.deps.rest.getEvents(0, 0, EVENT_TYPES, 1);
 		const snapshot = await this.read(current);
 		if (!current()) return false;
 		this.since = since;
@@ -286,11 +304,10 @@ export class SyncStatusMonitor {
 			return found instanceof Failure ? found : new Failure("Superseded.");
 		}
 		const folder = found.folder;
-		const [status, devices, myID, connected] = await Promise.all([
+		const [status, { devices, myID, connected }, lastScan] = await Promise.all([
 			this.deps.rest.getFolderStatus(folder.id),
-			this.deps.rest.getDevices(),
-			this.deps.rest.getMyID(),
-			this.deps.rest.getConnectedDevices(),
+			this.deps.rest.getDeviceStates(),
+			this.deps.rest.getLastScan(folder.id),
 		]);
 		const peers = new Map<string, Peer>();
 		for (const { deviceID } of folder.devices) {
@@ -303,11 +320,15 @@ export class SyncStatusMonitor {
 				paused: device?.paused ?? false,
 			});
 		}
+		// A device whose completion cannot be read counts as not having everything.
 		await Promise.all(
 			[...peers.values()].map(async (peer) => {
-				peer.completion = await this.deps.rest.getCompletion(folder.id, peer.id);
+				peer.completion = await this.deps.rest
+					.getCompletion(folder.id, peer.id)
+					.catch(() => undefined);
 			})
 		);
+		if (current()) this.scanned(lastScan);
 		return { folder, status, peers };
 	}
 
@@ -328,10 +349,11 @@ export class SyncStatusMonitor {
 				if (ours && this.status && typeof data.to === "string") {
 					this.status = { ...this.status, state: data.to };
 				}
-				if (ours && data.to === "scanning" && this.unscanned) this.scanAfterChange = true;
-				if (ours && data.from === "scanning" && this.scanAfterChange) {
-					this.unscanned = false;
-					this.scanAfterChange = false;
+				if (ours && data.to === "scanning") {
+					this.scanStarted = eventTime(event);
+				} else if (ours && data.from === "scanning") {
+					this.scanned(this.scanStarted);
+					this.scanStarted = undefined;
 				}
 				return;
 			case "FolderCompletion": {
@@ -357,7 +379,12 @@ export class SyncStatusMonitor {
 
 	private emit() {
 		if (this.status) {
-			this.deps.onChange(summarise(this.status, [...this.peers.values()], this.unscanned));
+			this.deps.onChange(summarise(this.status, [...this.peers.values()], this.unscanned()));
 		}
 	}
+}
+
+function eventTime(event: SyncthingEvent): number {
+	const time = event.time ? Date.parse(event.time) : NaN;
+	return Number.isNaN(time) ? Date.now() : time;
 }

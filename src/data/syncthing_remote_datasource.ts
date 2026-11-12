@@ -106,24 +106,67 @@ export class SyncthingFromREST {
 
 	/**
 	 * Waits up to `timeout` seconds for events of the given types after `since`.
+	 * @param limit returns only the latest this many, such as 1 to learn the latest ID.
+	 * @returns the well-formed events, and the latest ID of all events returned,
+	 * so that a malformed event is not asked for again.
 	 * @see https://docs.syncthing.net/rest/events-get.html
 	 */
 	async getEvents(
 		since: number,
 		timeout: number,
-		types: readonly string[]
-	): Promise<SyncthingEvent[]> {
-		const events = await this.requestEndpoint(
-			`/rest/events?since=${since}&timeout=${timeout}&events=${types.join(",")}`
+		types: readonly string[],
+		limit?: number
+	): Promise<{ events: SyncthingEvent[]; lastId: number }> {
+		const answer = await this.requestEndpoint(
+			`/rest/events?since=${since}&timeout=${timeout}&events=${types.join(",")}${
+				limit ? `&limit=${limit}` : ""
+			}`
 		);
-		if (!Array.isArray(events)) throw this.notSyncthing();
-		return events.filter(
+		if (!Array.isArray(answer)) throw this.notSyncthing();
+		const lastId = answer.reduce(
+			(max: number, event) =>
+				isRecord(event) && typeof event.id === "number" ? Math.max(max, event.id) : max,
+			since
+		);
+		const events = answer.filter(
 			(event): event is SyncthingEvent =>
 				isRecord(event) &&
 				typeof event.id === "number" &&
 				typeof event.type === "string" &&
 				isRecord(event.data)
 		);
+		return { events, lastId };
+	}
+
+	/**
+	 * When Syncthing last finished scanning a folder.
+	 * @returns the time in milliseconds, or `undefined` when it never did.
+	 * @see https://docs.syncthing.net/rest/stats-folder-get.html
+	 */
+	async getLastScan(folderId: string): Promise<number | undefined> {
+		const stats = await this.requestEndpoint("/rest/stats/folder");
+		if (!isRecord(stats)) throw this.notSyncthing();
+		const folder = stats[folderId];
+		const time = isRecord(folder) && typeof folder.lastScan === "string"
+			? Date.parse(folder.lastScan)
+			: NaN;
+		return Number.isNaN(time) || time <= 0 ? undefined : time;
+	}
+
+	/**
+	 * The configured devices, which one is this device, and which are connected now.
+	 */
+	async getDeviceStates(): Promise<{
+		devices: SyncthingDeviceModel[];
+		myID: string;
+		connected: Set<string>;
+	}> {
+		const [devices, myID, connected] = await Promise.all([
+			this.getDevices(),
+			this.getMyID(),
+			this.getConnectedDevices(),
+		]);
+		return { devices, myID, connected };
 	}
 
 	/**

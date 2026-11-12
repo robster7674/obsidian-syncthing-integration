@@ -94,17 +94,24 @@ function fakeSyncthing() {
 	const rest = {
 		getEvents: vi.fn((since: number, timeout: number) =>
 			timeout === 0
-				? Promise.resolve([{ id: 7, type: "StateChanged", data: {} }])
-				: new Promise<SyncthingEvent[]>((resolve, reject) => {
-						pending = resolve;
+				? Promise.resolve({ events: [], lastId: 7 })
+				: new Promise<{ events: SyncthingEvent[]; lastId: number }>((resolve, reject) => {
+						pending = (events) =>
+							resolve({
+								events,
+								lastId: events.reduce((max, event) => Math.max(max, event.id), since),
+							});
 						fail = reject;
 					}),
 		),
 		getFolderStatus: vi.fn(async () => ({ ...IDLE })),
 		getCompletion: vi.fn(async () => ({ completion: 100, needItems: 0, remoteState: "valid" })),
-		getDevices: vi.fn(async () => [{ deviceID: "PHONE", name: "phone", paused: false }]),
-		getMyID: vi.fn(async () => "ME"),
-		getConnectedDevices: vi.fn(async () => new Set(["PHONE"])),
+		getLastScan: vi.fn(async (): Promise<number | undefined> => 1_000),
+		getDeviceStates: vi.fn(async () => ({
+			devices: [{ deviceID: "PHONE", name: "phone", paused: false }],
+			myID: "ME",
+			connected: new Set(["PHONE"]),
+		})),
 	};
 	const statuses: SyncStatus[] = [];
 	let hidden = false;
@@ -135,6 +142,7 @@ group("SyncStatusMonitor", () => {
 
 		await vi.waitFor(() => expect(syncthing.statuses).toEqual([{ kind: "synced" }]));
 		expect(syncthing.longPolls()).toEqual([[7, 30, expect.any(Array)]]);
+		expect(syncthing.rest.getEvents).toHaveBeenCalledWith(0, 0, expect.any(Array), 1);
 
 		syncthing.send({
 			id: 8,
@@ -252,11 +260,16 @@ group("SyncStatusMonitor", () => {
 		syncthing.monitor.start();
 		await vi.waitFor(() => expect(syncthing.statuses).toEqual([{ kind: "synced" }]));
 
-		syncthing.monitor.vaultChanged();
+		syncthing.monitor.vaultChanged(2_000);
 		expect(syncthing.statuses.at(-1)).toEqual({ kind: "unscanned" });
 
 		syncthing.send(
-			{ id: 9, type: "StateChanged", data: { folder: "vault", from: "idle", to: "scanning" } },
+			{
+				id: 9,
+				type: "StateChanged",
+				time: new Date(3_000).toISOString(),
+				data: { folder: "vault", from: "idle", to: "scanning" },
+			},
 			{ id: 10, type: "StateChanged", data: { folder: "vault", from: "scanning", to: "idle" } },
 		);
 		await vi.waitFor(() => expect(syncthing.statuses.at(-1)).toEqual({ kind: "synced" }));
@@ -267,9 +280,16 @@ group("SyncStatusMonitor", () => {
 		syncthing.monitor.start();
 		await vi.waitFor(() => expect(syncthing.statuses).toHaveLength(1));
 
-		syncthing.monitor.vaultChanged();
 		syncthing.send({
 			id: 9,
+			type: "StateChanged",
+			time: new Date(1_500).toISOString(),
+			data: { folder: "vault", from: "idle", to: "scanning" },
+		});
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(2));
+		syncthing.monitor.vaultChanged(2_000);
+		syncthing.send({
+			id: 10,
 			type: "StateChanged",
 			data: { folder: "vault", from: "scanning", to: "idle" },
 		});
@@ -286,6 +306,48 @@ group("SyncStatusMonitor", () => {
 		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(2));
 
 		expect(syncthing.statuses).toHaveLength(1);
+	});
+
+	it("counts a change as scanned when a snapshot shows a later finished scan", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.monitor.vaultChanged(500);
+
+		await expect(syncthing.monitor.check()).resolves.toEqual({ kind: "synced" });
+
+		syncthing.monitor.vaultChanged(1_500);
+		await expect(syncthing.monitor.check()).resolves.toEqual({ kind: "unscanned" });
+	});
+
+	it("shows the other devices when one device's completion cannot be read", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.rest.getCompletion.mockRejectedValueOnce(new Error("no such device"));
+
+		await expect(syncthing.monitor.check()).resolves.toEqual({
+			kind: "waiting",
+			devices: ["phone"],
+		});
+	});
+
+	it("keeps saying Syncthing is unreachable when the vault changes meanwhile", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.monitor.start();
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(1));
+		syncthing.fail(new Error("connection refused"));
+		await vi.waitFor(() => expect(syncthing.statuses.at(-1)?.kind).toBe("unknown"));
+
+		syncthing.monitor.vaultChanged();
+
+		expect(syncthing.statuses.at(-1)?.kind).toBe("unknown");
+	});
+
+	it("moves past a malformed event instead of asking for it again", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.rest.getEvents.mockImplementationOnce(async () => ({ events: [], lastId: 7 }));
+		syncthing.rest.getEvents.mockImplementationOnce(async () => ({ events: [], lastId: 12 }));
+		syncthing.monitor.start();
+
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(2));
+		expect(syncthing.longPolls()[1][0]).toBe(12);
 	});
 
 	it("reads the state once for the command, without following it", async () => {

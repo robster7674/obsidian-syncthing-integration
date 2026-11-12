@@ -342,14 +342,19 @@ describe("SyncthingFromREST sync state endpoints", () => {
 		);
 	});
 
-	it("long-polls the events of the given types and drops malformed ones", async () => {
+	it("long-polls the events of the given types and drops malformed ones past the cursor", async () => {
 		mockRequestUrl.mockResolvedValue(
-			response([{ id: 3, type: "StateChanged", data: { to: "idle" } }, { id: "x" }]),
+			response([
+				{ id: 3, type: "StateChanged", data: { to: "idle" } },
+				{ id: 4, type: "StateChanged", data: null },
+				{ id: "x" },
+			]),
 		);
 
-		await expect(rest.getEvents(2, 60, ["StateChanged", "FolderSummary"])).resolves.toEqual([
-			{ id: 3, type: "StateChanged", data: { to: "idle" } },
-		]);
+		await expect(rest.getEvents(2, 60, ["StateChanged", "FolderSummary"])).resolves.toEqual({
+			events: [{ id: 3, type: "StateChanged", data: { to: "idle" } }],
+			lastId: 4,
+		});
 		expect(mockRequestUrl).toHaveBeenCalledWith(
 			expect.objectContaining({
 				url: "http://127.0.0.1:8384/rest/events?since=2&timeout=60&events=StateChanged,FolderSummary",
@@ -363,5 +368,32 @@ describe("SyncthingFromREST sync state endpoints", () => {
 		await expect(rest.getFolderStatus("vault")).rejects.toBeInstanceOf(RestFailure);
 		await expect(rest.getCompletion("vault", "A")).rejects.toBeInstanceOf(RestFailure);
 		await expect(rest.getEvents(0, 0, [])).rejects.toBeInstanceOf(RestFailure);
+	});
+
+	it("asks for only the latest event when given a limit", async () => {
+		mockRequestUrl.mockResolvedValue(response([]));
+
+		await expect(rest.getEvents(0, 0, ["ConfigSaved"], 1)).resolves.toEqual({
+			events: [],
+			lastId: 0,
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/events?since=0&timeout=0&events=ConfigSaved&limit=1",
+			}),
+		);
+	});
+
+	it("reads when a folder was last scanned", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({
+				vault: { lastScan: "2026-11-12T10:00:00Z", lastFile: {} },
+				fresh: { lastScan: "0001-01-01T00:00:00Z" },
+			}),
+		);
+
+		await expect(rest.getLastScan("vault")).resolves.toBe(Date.parse("2026-11-12T10:00:00Z"));
+		await expect(rest.getLastScan("fresh")).resolves.toBeUndefined();
+		await expect(rest.getLastScan("missing")).resolves.toBeUndefined();
 	});
 });

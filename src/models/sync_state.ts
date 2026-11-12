@@ -27,6 +27,8 @@ export interface Completion {
 export interface SyncthingEvent {
 	id: number;
 	type: string;
+	/** When Syncthing emitted it, as an RFC 3339 time. */
+	time?: string;
 	data: Record<string, unknown>;
 }
 
