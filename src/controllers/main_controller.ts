@@ -12,6 +12,7 @@ import {
 	Failure,
 	MissingOriginalFailure,
 } from "src/models/failures";
+import { findVaultFolder, vaultBasePath, type VaultFolder } from "./vault_folder";
 import {
 	originalPathOf,
 	parseConflictFilename,
@@ -199,6 +200,27 @@ export class SyncthingController {
 			}
 		}
 		return this.plugin.getApiKey();
+	}
+
+	/**
+	 * Finds the Syncthing folder that holds the vault on this device, among
+	 * the folders Syncthing has.
+	 * @see findVaultFolder
+	 * @throws {RestFailure} when Syncthing cannot be asked.
+	 */
+	async getVaultFolder(): Promise<{
+		folders: SyncthingFolder[];
+		vaultFolder: VaultFolder | Failure;
+	}> {
+		const folders = await this.syncthingFromREST.getAllFolders();
+		return {
+			folders,
+			vaultFolder: findVaultFolder(
+				folders,
+				vaultBasePath(this.plugin.app),
+				this.plugin.device.folderId
+			),
+		};
 	}
 
 	/**

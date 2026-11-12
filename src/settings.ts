@@ -31,6 +31,8 @@ export interface DeviceSettings {
 	baseUrl: string;
 	/** The Syncthing program on desktop, or `""` to find it. */
 	cliPath: string;
+	/** The ID of the Syncthing folder chosen for the vault, or `""` to find it by path. */
+	folderId: string;
 }
 
 /** Fields of 2.4.0 that other devices may still need to take over their settings. */
@@ -87,6 +89,10 @@ export function parseSettings(
 			cliPath:
 				isRecord(storedDevice) && typeof storedDevice.cliPath === "string"
 					? storedDevice.cliPath
+					: "",
+			folderId:
+				isRecord(storedDevice) && typeof storedDevice.folderId === "string"
+					? storedDevice.folderId
 					: "",
 		},
 		takeOver,

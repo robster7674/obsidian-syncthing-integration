@@ -60,6 +60,22 @@ export class TFolder extends TAbstractFile {
 	}
 }
 
+/** Desktop vault storage. */
+export class FileSystemAdapter {
+	constructor(private basePath = "/vault") {}
+	getBasePath(): string {
+		return this.basePath;
+	}
+}
+
+/** Mobile vault storage. */
+export class CapacitorAdapter {
+	constructor(private basePath = "/storage/emulated/0/vault") {}
+	getFullPath(normalizedPath: string): string {
+		return `${this.basePath}/${normalizedPath}`;
+	}
+}
+
 export class Vault {
 	getFiles = vi.fn((): TFile[] => []);
 	getMarkdownFiles = vi.fn((): TFile[] => []);
@@ -325,6 +341,13 @@ export class TextComponent {
 	}
 }
 
+export class SearchComponent extends TextComponent {
+	constructor(containerEl: HTMLElement) {
+		super(containerEl);
+		this.inputEl.type = "search";
+	}
+}
+
 export class Setting {
 	settingEl: HTMLElement;
 	infoEl: HTMLElement;
@@ -387,6 +410,12 @@ export class Setting {
 		const text = new TextComponent(this.controlEl);
 		this.components.push(text);
 		callback(text);
+		return this;
+	}
+	addSearch(callback: (search: SearchComponent) => unknown): this {
+		const search = new SearchComponent(this.controlEl);
+		this.components.push(search);
+		callback(search);
 		return this;
 	}
 }
