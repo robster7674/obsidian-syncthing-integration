@@ -44,7 +44,6 @@ export class SyncthingDevice {
 		 */
 		public deviceID: string,
 		public introducedBy: string,
-		// public encryptionPassword: string, // TODO: move to the Folder element.
 		public address: string[],
 		public paused: boolean,
 		public ignoredFolders: string[],
@@ -55,18 +54,14 @@ export class SyncthingDevice {
 /**
  * This is the devices' information that is stored in the {@linkcode SyncthingFolder} object.
  */
+/**
+ * A device a folder is shared with. Its encryption password, also in the
+ * REST answer, is deliberately not kept.
+ */
 export class ReducedSyncthingDevice
-	implements
-		Pick<
-			SyncthingDevice,
-			"deviceID" | "introducedBy" /* | "encryptionPassword" */
-		>
+	implements Pick<SyncthingDevice, "deviceID" | "introducedBy">
 {
-	constructor(
-		public deviceID: string,
-		public introducedBy: string,
-		public encryptionPassword: string
-	) {}
+	constructor(public deviceID: string, public introducedBy: string) {}
 }
 
 /**
@@ -120,4 +115,3 @@ export interface ConflictFilename {
 	originalName: string;
 }
 
-// TODO: add all entities necessary from Syncthing API (REST/CLI) to the integration in Obsidian.

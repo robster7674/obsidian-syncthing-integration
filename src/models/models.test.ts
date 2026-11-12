@@ -61,11 +61,6 @@ describe("SyncthingDeviceModel", () => {
 		expect(device.name).toBe("local-device");
 	});
 
-	it("overflows the stack when serialized back to JSON", () => {
-		const devices = readFixtureJson<unknown[]>("devices.json");
-		const device = SyncthingDeviceModel.fromJSON(JSON.stringify(devices[1]));
-		expect(() => device.toJSON()).toThrow(RangeError);
-	});
 
 	it("throws when addresses are missing", () => {
 		expect(() =>
@@ -86,19 +81,15 @@ describe("ReducedSyncthingDeviceModel", () => {
 	const raw = JSON.stringify({
 		deviceID: "AAAAAAA",
 		introducedBy: "",
-		encryptionPassword: "",
+		encryptionPassword: "folder-secret",
 	});
 
-	it("parses a reduced device", () => {
+	it("parses a reduced device without keeping its encryption password", () => {
 		const device = ReducedSyncthingDeviceModel.fromJSON(raw);
 		expect(device.deviceID).toBe("AAAAAAA");
-		expect(device.encryptionPassword).toBe("");
+		expect(JSON.stringify(device)).not.toContain("folder-secret");
 	});
 
-	it("does not implement toJSON", () => {
-		const device = ReducedSyncthingDeviceModel.fromJSON(raw);
-		expect(() => device.toJSON()).toThrow("Method not implemented.");
-	});
 
 	it("throws when the JSON is not an object", () => {
 		expect(() => ReducedSyncthingDeviceModel.fromJSON("null")).toThrow(

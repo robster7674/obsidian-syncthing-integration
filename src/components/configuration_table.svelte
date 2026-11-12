@@ -1,136 +1,145 @@
 <script lang="ts">
-	import { Notice } from "obsidian";
 	import { type SyncthingDevice, type SyncthingFolder } from "src/models/entities";
 	import { type ConfigurationModal } from "src/views/configuration_modal";
 	import { onMount } from "svelte";
-	import ConfigurationItem from "./configuration_item.svelte";
-	import FolderItem from "./folder_item.svelte";
 	import ObsidianLucideIcon from "./obsidian_lucide_icon.svelte";
-	import RemoteItem from "./remote_item.svelte";
 	import WarningMessage from "./warning_message.svelte";
 
 	export let parent: ConfigurationModal;
 	parent.titleEl.setText("Syncthing Configuration");
 	parent.titleEl.style.textAlign = "center";
 
-	// TODO: refactor this to use Svelte stores.
 	let folders: SyncthingFolder[] = [];
-	let devices: SyncthingDevice[] = [];
-	let thisDevice: SyncthingDevice | undefined = undefined;
+	let thisDevice: SyncthingDevice | undefined;
+	let otherDevices: SyncthingDevice[] = [];
+	let connected = new Set<string>();
+	let error = "";
+	let loading = true;
+
 	onMount(async () => {
 		try {
-			folders = await parent.plugin.syncthingController.getFolders();
-			devices = await parent.plugin.syncthingController.getDevices();
-		} catch (error) {
-			new Notice((error as Error).message);
-			return;
+			({ folders, thisDevice, otherDevices, connected } =
+				await parent.plugin.syncthingController.getOverview());
+		} catch (failure) {
+			error = (failure as Error).message;
 		}
-		thisDevice = devices.first();
+		loading = false;
 	});
+
+	const nameOf = (deviceID: string) =>
+		[thisDevice, ...otherDevices].find((device) => device?.deviceID === deviceID)
+			?.name || deviceID.slice(0, 7);
+
+	const sharedWith = (folder: SyncthingFolder) =>
+		folder.devices
+			.filter((device) => device.deviceID !== thisDevice?.deviceID)
+			.map((device) => nameOf(device.deviceID));
 </script>
 
-<WarningMessage
-	message="The following configuration is not fully implemented yet. Some data aren't real-time and some controls are not implemented yet. It is mainly to reproduce the Syncthing GUI and then, real-time data and controls will be added."
-/>
+<p>
+	What this device's Syncthing is set up to sync. Change it in the
+	Syncthing GUI.
+</p>
 
-<div class="left">
-	<div class="folder">
-		<h2>Folders ({folders.length})</h2>
-		{#each folders as folder}
-			<FolderItem {folder} />
-		{/each}
-		<div class="controls">
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="pause" />
-				<span>Pause All</span>
-			</button>
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="refresh-cw" />
-				<span>Rescan All</span>
-			</button>
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="plus" />
-				<span>Add Folder</span>
-			</button>
-		</div>
+{#if loading}
+	<p>Loading…</p>
+{:else if error}
+	<WarningMessage title="Could not read the configuration" message={error} />
+{:else}
+	<div class="columns">
+		<section>
+			<h2>Folders ({folders.length})</h2>
+			{#each folders as folder (folder.id)}
+				<div class="item">
+					<div class="title">
+						<ObsidianLucideIcon name="folder" />
+						<span>{folder.label || folder.id}</span>
+					</div>
+					<dl>
+						<dt>Path</dt>
+						<dd>{folder.path}</dd>
+						<dt>Type</dt>
+						<dd>{folder.type}</dd>
+						<dt>Shared with</dt>
+						<dd>{sharedWith(folder).join(", ") || "No other device"}</dd>
+					</dl>
+				</div>
+			{/each}
+		</section>
+		<section>
+			<h2>This device</h2>
+			{#if thisDevice}
+				<div class="item">
+					<div class="title">
+						<ObsidianLucideIcon name="hard-drive" />
+						<span>{thisDevice.name || thisDevice.deviceID.slice(0, 7)}</span>
+					</div>
+					<dl>
+						<dt>Device ID</dt>
+						<dd>{thisDevice.deviceID}</dd>
+					</dl>
+				</div>
+			{/if}
+			<h2>Other devices ({otherDevices.length})</h2>
+			{#each otherDevices as device (device.deviceID)}
+				<div class="item">
+					<div class="title">
+						<ObsidianLucideIcon name="hard-drive" />
+						<span>{device.name || device.deviceID.slice(0, 7)}</span>
+						<span class="state">
+							{device.paused
+								? "Paused"
+								: connected.has(device.deviceID)
+									? "Connected"
+									: "Disconnected"}
+						</span>
+					</div>
+					<dl>
+						<dt>Device ID</dt>
+						<dd>{device.deviceID}</dd>
+						<dt>Addresses</dt>
+						<dd>{device.address.join(", ")}</dd>
+					</dl>
+				</div>
+			{/each}
+		</section>
 	</div>
-</div>
-<div class="right">
-	<div class="mydevice">
-		<h2>This Device</h2>
-		<ConfigurationItem isThisDevice device={thisDevice} />
-	</div>
-	<div class="remote">
-		<h2>
-			Remote Devices ({devices.filter((value) => value !== thisDevice)
-				.length})
-		</h2>
-		{#each devices.filter((value) => value !== thisDevice) as device}
-			<RemoteItem {device} />
-		{/each}
-		<div class="controls">
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="pause" />
-				<span>Pause All</span>
-			</button>
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="info" />
-				<span>Recent Changes</span>
-			</button>
-			<button
-				on:click={async (event) => {
-					new Notice("Not implemented yet!");
-				}}
-			>
-				<ObsidianLucideIcon name="plus" />
-				<span>Add Remote Device</span>
-			</button>
-		</div>
-	</div>
-</div>
+{/if}
 
 <style>
-	.left {
-		float: left;
-		width: 50%;
+	.columns {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(18em, 1fr));
+		gap: 1em;
 	}
-	.right {
-		float: right;
-		width: 50%;
+	.item {
+		border: 1px solid var(--background-modifier-border);
+		border-radius: var(--radius-m);
+		padding: 0.5em 0.75em;
+		margin-bottom: 0.5em;
 	}
-	.folder,
-	.mydevice,
-	.remote {
-		width: 100%;
-	}
-	.controls {
+	.title {
 		display: flex;
-		flex-direction: row;
-		justify-content: flex-end;
-		margin: 1em 0;
-	}
-	.controls button {
 		gap: 0.5em;
-		margin: 0 0.5em;
+		align-items: center;
+		font-weight: var(--font-semibold);
+	}
+	.state {
+		margin-left: auto;
+		font-weight: normal;
+		color: var(--text-muted);
+	}
+	dl {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 0.25em 1em;
+		margin: 0.5em 0 0;
+	}
+	dt {
+		color: var(--text-muted);
+	}
+	dd {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 </style>

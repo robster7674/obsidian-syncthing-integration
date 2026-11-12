@@ -201,17 +201,28 @@ export class SyncthingController {
 		return this.plugin.getApiKey();
 	}
 
-	/**
-	 * Gets the Syncthing devices.
-	 */
-	async getDevices(): Promise<SyncthingDevice[]> {
-		return await this.syncthingFromREST.getDevices();
-	}
 
 	/**
-	 * Gets the Syncthing folders.
+	 * Gets what the configuration view shows: the folders, this device and the
+	 * other devices, with whether each is connected now.
 	 */
-	async getFolders(): Promise<SyncthingFolder[]> {
-		return await this.syncthingFromREST.getAllFolders();
+	async getOverview(): Promise<{
+		folders: SyncthingFolder[];
+		thisDevice?: SyncthingDevice;
+		otherDevices: SyncthingDevice[];
+		connected: Set<string>;
+	}> {
+		const [folders, devices, myID, connected] = await Promise.all([
+			this.syncthingFromREST.getAllFolders(),
+			this.syncthingFromREST.getDevices(),
+			this.syncthingFromREST.getMyID(),
+			this.syncthingFromREST.getConnectedDevices(),
+		]);
+		return {
+			folders,
+			thisDevice: devices.find((device) => device.deviceID === myID),
+			otherDevices: devices.filter((device) => device.deviceID !== myID),
+			connected,
+		};
 	}
 }
