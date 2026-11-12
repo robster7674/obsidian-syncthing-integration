@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { App, Notice } from "obsidian";
+import { App, Notice, Platform } from "obsidian";
 import type { Notice as MockNotice } from "../test/mocks/obsidian";
 import SyncthingPlugin from "./main";
 import { API_KEY_SECRET, DEVICE_SETTINGS_KEY } from "./settings";
@@ -209,5 +210,63 @@ describe("SyncthingPlugin.loadSettings", () => {
 		expect(plugin.saveData).not.toHaveBeenCalled();
 		expect(app.saveLocalStorage).not.toHaveBeenCalled();
 		expect(plugin.getApiKey()).toBe("");
+	});
+});
+
+describe("SyncthingPlugin sync status", () => {
+	it("follows the sync state only while an API key is set, and stops on unload", async () => {
+		const { plugin } = makeDevice({ devMode: false });
+		const start = vi.spyOn(plugin.syncStatusMonitor, "start").mockImplementation(() => {});
+		const stop = vi.spyOn(plugin.syncStatusMonitor, "stop");
+
+		await plugin.onload();
+		expect(start).not.toHaveBeenCalled();
+
+		plugin.setApiKey("key");
+		expect(start).toHaveBeenCalledTimes(1);
+
+		plugin.device.cliPath = "/usr/bin/syncthing";
+		plugin.saveDeviceSettings();
+		expect(start).toHaveBeenCalledTimes(1);
+
+		plugin.device.folderId = "vault";
+		plugin.saveDeviceSettings();
+		expect(start).toHaveBeenCalledTimes(2);
+
+		plugin.onunload();
+		expect(stop).toHaveBeenCalled();
+		plugin.setApiKey("other");
+		expect(start).toHaveBeenCalledTimes(2);
+	});
+
+	it("answers the safe-to-close command from the latest state", async () => {
+		const { plugin } = makeDevice({ devMode: false });
+		vi.spyOn(plugin.syncStatusMonitor, "start").mockImplementation(() => {});
+		await plugin.onload();
+		plugin.setApiKey("key");
+
+		plugin.syncStatus = { kind: "waiting", devices: ["phone"] };
+		await plugin.showSafeToClose();
+
+		expect(notices().at(-1)?.message).toContain("phone is still receiving");
+		plugin.onunload();
+	});
+
+	it("does not follow the sync state on mobile, and reads it once when asked", async () => {
+		Platform.isMobileApp = true;
+		const { plugin } = makeDevice({ devMode: false });
+		const start = vi.spyOn(plugin.syncStatusMonitor, "start");
+		const check = vi
+			.spyOn(plugin.syncStatusMonitor, "check")
+			.mockResolvedValue({ kind: "synced" });
+		await plugin.onload();
+		plugin.setApiKey("key");
+
+		await plugin.showSafeToClose();
+
+		expect(start).not.toHaveBeenCalled();
+		expect(check).toHaveBeenCalled();
+		expect(notices().at(-1)?.message).toContain("safe to close");
+		plugin.onunload();
 	});
 });

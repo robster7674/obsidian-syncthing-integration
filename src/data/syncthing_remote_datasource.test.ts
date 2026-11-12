@@ -304,3 +304,96 @@ describe("SyncthingFromREST status endpoints", () => {
 		await expect(rest.getConnectedDevices()).rejects.toBeInstanceOf(RestFailure);
 	});
 });
+
+describe("SyncthingFromREST sync state endpoints", () => {
+	it("reads a folder's state, counting pull errors only once", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({ state: "idle", needFiles: 0, needBytes: 0, errors: 2, pullErrors: 2 }),
+		);
+
+		await expect(rest.getFolderStatus("my folder")).resolves.toEqual({
+			state: "idle",
+			needItems: 0,
+			needBytes: 0,
+			errors: 2,
+			error: "",
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/db/status?folder=my%20folder",
+			}),
+		);
+	});
+
+	it("reads another device's completion of a folder", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({ completion: 99.5, needItems: 1, remoteState: "valid" }),
+		);
+
+		await expect(rest.getCompletion("vault", "AAA-BBB")).resolves.toEqual({
+			completion: 99.5,
+			needItems: 1,
+			remoteState: "valid",
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/db/completion?folder=vault&device=AAA-BBB",
+			}),
+		);
+	});
+
+	it("long-polls the events of the given types and drops malformed ones past the cursor", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response([
+				{ id: 3, type: "StateChanged", data: { to: "idle" } },
+				{ id: 4, type: "StateChanged", data: null },
+				{ id: "x" },
+			]),
+		);
+
+		await expect(rest.getEvents(2, 60, ["StateChanged", "FolderSummary"])).resolves.toEqual({
+			events: [{ id: 3, type: "StateChanged", data: { to: "idle" } }],
+			lastId: 4,
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/events?since=2&timeout=60&events=StateChanged,FolderSummary",
+			}),
+		);
+	});
+
+	it("says the URL is wrong when a state answer is not Syncthing's", async () => {
+		mockRequestUrl.mockResolvedValue(response({}));
+
+		await expect(rest.getFolderStatus("vault")).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getCompletion("vault", "A")).rejects.toBeInstanceOf(RestFailure);
+		await expect(rest.getEvents(0, 0, [])).rejects.toBeInstanceOf(RestFailure);
+	});
+
+	it("asks for only the latest event when given a limit", async () => {
+		mockRequestUrl.mockResolvedValue(response([]));
+
+		await expect(rest.getEvents(0, 0, ["ConfigSaved"], 1)).resolves.toEqual({
+			events: [],
+			lastId: 0,
+		});
+		expect(mockRequestUrl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "http://127.0.0.1:8384/rest/events?since=0&timeout=0&events=ConfigSaved&limit=1",
+			}),
+		);
+	});
+
+	it("reads when a folder was last scanned", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response({
+				vault: { lastScan: "2026-11-12T10:00:00Z", lastFile: {} },
+				fresh: { lastScan: "0001-01-01T00:00:00Z" },
+			}),
+		);
+
+		await expect(rest.getLastScan("vault")).resolves.toBe(Date.parse("2026-11-12T10:00:00Z"));
+		await expect(rest.getLastScan("fresh")).resolves.toBeUndefined();
+		await expect(rest.getLastScan("missing")).resolves.toBeUndefined();
+	});
+});
