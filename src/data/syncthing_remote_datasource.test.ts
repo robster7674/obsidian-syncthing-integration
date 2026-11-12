@@ -135,6 +135,25 @@ describe("SyncthingFromREST.ping", () => {
 		expect(mockRequestUrl).not.toHaveBeenCalled();
 	});
 
+	it("says to use https:// when Syncthing redirects there", async () => {
+		mockRequestUrl.mockResolvedValue(
+			response('<a href="https://127.0.0.1:8384/rest/system/ping">Temporary Redirect</a>.'),
+		);
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("Use https://"),
+		});
+	});
+
+	it("explains a refused self-signed certificate", async () => {
+		plugin.device.baseUrl = "https://127.0.0.1:8384";
+		mockRequestUrl.mockRejectedValue(new Error("net::ERR_CERT_AUTHORITY_INVALID"));
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("self-signed certificate"),
+		});
+	});
+
 	it("logs neither the API key nor the response", async () => {
 		const log = vi.spyOn(console, "log");
 		const error = vi.spyOn(console, "error");

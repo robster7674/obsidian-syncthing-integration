@@ -1,57 +1,44 @@
 import { createRequire } from "node:module";
-import type * as UtilModule from "node:util";
+import type * as ChildProcess from "node:child_process";
+import type * as Fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
 import { CliFailure } from "src/models/failures";
-import { SyncthingFromCLI } from "./syncthing_local_datasource";
+import { asPlugin, makePlugin } from "../../test/helpers/plugin";
+import { MACOS_APP_BINARY, SyncthingFromCLI } from "./syncthing_local_datasource";
 
 /**
- * The datasource uses `require("util").promisify` internally. Inside Vitest the
- * `require` is resolved by Node's module system, so we patch `promisify` on the
- * real `util` module (shared with the code under test) instead of stubbing the
- * global `require`.
+ * The datasource requires `child_process` and `fs` at run time, which Vitest
+ * resolves through Node, so the real modules are patched.
  */
 const nodeRequire = createRequire(import.meta.url);
-const util = nodeRequire("util") as typeof UtilModule;
+const childProcess = nodeRequire("child_process") as typeof ChildProcess;
+const fs = nodeRequire("fs") as typeof Fs;
 
-let stdout: string;
-let stderr: string;
-let statIsDirectory: boolean;
-let execError: Error | undefined;
-let lastCommand: string | undefined;
-let lastStatPath: string | undefined;
+let calls: { binary: string; args: string[] }[];
+let outcome: {
+	error?: Error & { code?: string };
+	stdout?: string;
+	stderr?: string;
+};
+let plugin: ReturnType<typeof makePlugin>;
 let cli: SyncthingFromCLI;
 
 beforeEach(() => {
-	vi.spyOn(console, "log").mockImplementation(() => {});
-	vi.spyOn(console, "error").mockImplementation(() => {});
-	stdout = "";
-	stderr = "";
-	statIsDirectory = true;
-	execError = undefined;
-	lastCommand = undefined;
-	lastStatPath = undefined;
-
-	vi.spyOn(util, "promisify").mockImplementation(((
-		fn: (...args: unknown[]) => unknown,
+	calls = [];
+	outcome = {};
+	vi.spyOn(childProcess, "execFile").mockImplementation(((
+		binary: string,
+		args: string[],
+		_options: unknown,
+		callback: (error: unknown, stdout: string, stderr: string) => void,
 	) => {
-		if (fn.name === "stat") {
-			return (path: string): Promise<unknown> => {
-				lastStatPath = path;
-				if (execError) return Promise.reject(execError);
-				return Promise.resolve({
-					isDirectory: () => statIsDirectory,
-				});
-			};
-		}
-		return (command: string): Promise<unknown> => {
-			lastCommand = command;
-			if (execError) return Promise.reject(execError);
-			return Promise.resolve({ stdout, stderr });
-		};
+		calls.push({ binary, args });
+		callback(outcome.error ?? null, outcome.stdout ?? "", outcome.stderr ?? "");
 	}) as never);
-
-	cli = new SyncthingFromCLI();
+	vi.spyOn(fs, "existsSync").mockReturnValue(false);
+	plugin = makePlugin();
+	cli = new SyncthingFromCLI(asPlugin(plugin));
 });
 
 afterEach(() => {
@@ -59,83 +46,94 @@ afterEach(() => {
 });
 
 describe("SyncthingFromCLI.getVersion", () => {
-	it("returns the CLI output", async () => {
-		stdout = "syncthing v1.27.0\n";
+	it("runs syncthing --version without a shell and trims the output", async () => {
+		outcome.stdout = "syncthing v2.1.7\n";
 
-		await expect(cli.getVersion()).resolves.toBe("syncthing v1.27.0\n");
-		expect(lastCommand).toBe("syncthing --version");
+		await expect(cli.getVersion()).resolves.toBe("syncthing v2.1.7");
+		expect(calls).toEqual([{ binary: "syncthing", args: ["--version"] }]);
 	});
 
-	it("throws a CliFailure when the command writes to stderr", async () => {
-		stderr = "syncthing: not found";
+	it("ignores warnings on stderr when Syncthing succeeds", async () => {
+		outcome = { stdout: "syncthing v2.1.7", stderr: "WARNING: something" };
 
-		await expect(cli.getVersion()).rejects.toBeInstanceOf(CliFailure);
-		await expect(cli.getVersion()).rejects.toThrow("syncthing: not found");
+		await expect(cli.getVersion()).resolves.toBe("syncthing v2.1.7");
 	});
 
-	it("rejects when the command itself fails to run", async () => {
-		execError = new Error("spawn failed");
+	it("says to set the path when the program is not found", async () => {
+		outcome.error = Object.assign(new Error("spawn syncthing ENOENT"), {
+			code: "ENOENT",
+		});
 
-		await expect(cli.getVersion()).rejects.toThrow("spawn failed");
+		const attempt = cli.getVersion();
+
+		await expect(attempt).rejects.toBeInstanceOf(CliFailure);
+		await expect(attempt).rejects.toMatchObject({
+			message: expect.stringContaining("Set the path to Syncthing"),
+		});
 	});
 
-	it("throws a CliFailure when running on mobile", async () => {
+	it("reports what Syncthing wrote when it exits with an error", async () => {
+		outcome = { error: new Error("Command failed"), stderr: "config: locked\n" };
+
+		await expect(cli.getVersion()).rejects.toMatchObject({
+			message: "Running syncthing failed: config: locked",
+		});
+	});
+
+	it("is not available on mobile", async () => {
 		Platform.isMobileApp = true;
 
-		await expect(cli.getVersion()).rejects.toThrow(
-			"CLI not supported on mobile.",
-		);
+		await expect(cli.getVersion()).rejects.toBeInstanceOf(CliFailure);
+		expect(calls).toEqual([]);
 	});
+});
 
-	it("uses the macOS application package when available", async () => {
-		Platform.isMacOS = true;
+describe("SyncthingFromCLI.binary", () => {
+	it("uses the path set for this device, as given", async () => {
+		plugin.device.cliPath = "C:\\Program Files\\Syncthing\\syncthing.exe";
+		outcome.stdout = "v2";
 
 		await cli.getVersion();
 
-		expect(lastStatPath).toBe(
-			"/Applications/Syncthing.app/Contents/Resources/syncthing/",
-		);
-		expect(lastCommand).toBe(
-			"/Applications/Syncthing.app/Contents/Resources/syncthing/syncthing --version",
-		);
+		expect(calls[0].binary).toBe("C:\\Program Files\\Syncthing\\syncthing.exe");
 	});
 
-	it("ignores the macOS package when it is not a directory", async () => {
+	it("uses the syncthing-macos app when it is installed", () => {
 		Platform.isMacOS = true;
-		statIsDirectory = false;
+		vi.mocked(fs.existsSync).mockReturnValue(true);
 
-		await cli.getVersion();
+		expect(cli.binary()).toBe(MACOS_APP_BINARY);
+	});
 
-		expect(lastCommand).toBe("syncthing --version");
+	it("falls back to the PATH on macOS without the app, such as a Homebrew install", () => {
+		Platform.isMacOS = true;
+
+		expect(cli.binary()).toBe("syncthing");
+	});
+
+	it("falls back to the PATH when checking for the macOS app fails", () => {
+		Platform.isMacOS = true;
+		vi.mocked(fs.existsSync).mockImplementation(() => {
+			throw new Error("EACCES");
+		});
+
+		expect(cli.binary()).toBe("syncthing");
 	});
 });
 
 describe("SyncthingFromCLI.getAPIkey", () => {
 	it("returns the trimmed API key", async () => {
-		stdout = "  my-api-key\n";
+		outcome.stdout = "  my-api-key\n";
 
 		await expect(cli.getAPIkey()).resolves.toBe("my-api-key");
+		expect(calls[0].args).toEqual(["cli", "config", "gui", "apikey", "get"]);
 	});
 
-	it("throws a CliFailure when the command fails", async () => {
-		stderr = "no key";
+	it("throws a CliFailure when Syncthing has no key", async () => {
+		outcome.stdout = "\n";
 
-		await expect(cli.getAPIkey()).rejects.toThrow("No API key found.");
-	});
-});
-
-describe("SyncthingFromCLI start / stop", () => {
-	it("startSyncthing resolves to true", async () => {
-		await expect(cli.startSyncthing()).resolves.toBe(true);
-	});
-
-	it("startSyncthing throws a CliFailure when the command fails", async () => {
-		stderr = "already running";
-
-		await expect(cli.startSyncthing()).rejects.toBeInstanceOf(CliFailure);
-	});
-
-	it("stopSyncthing resolves to true", async () => {
-		await expect(cli.stopSyncthing()).resolves.toBe(true);
+		await expect(cli.getAPIkey()).rejects.toMatchObject({
+			message: "Syncthing has no API key set.",
+		});
 	});
 });

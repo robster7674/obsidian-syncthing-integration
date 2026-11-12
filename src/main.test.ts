@@ -46,6 +46,7 @@ describe("SyncthingPlugin.loadSettings", () => {
 		expect(app.secretStorage.getSecret(API_KEY_SECRET)).toBe("key-from-data-json");
 		expect(app.loadLocalStorage(DEVICE_SETTINGS_KEY)).toEqual({
 			baseUrl: "http://192.168.1.5:8384",
+			cliPath: "",
 		});
 		expect(saved()).toEqual(SHARED_DATA);
 		expect(plugin.getApiKey()).toBe("key-from-data-json");

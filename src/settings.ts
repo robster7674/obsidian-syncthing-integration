@@ -1,8 +1,16 @@
+import { Platform } from "obsidian";
 import { isRecord } from "./controllers/utils";
 import { Failure } from "./models/failures";
 
 /** Syncthing's default GUI and REST API address. */
 export const DEFAULT_BASE_URL = "http://127.0.0.1:8384";
+/** The address of Syncthing-Fork, which always serves its GUI over HTTPS. */
+export const ANDROID_BASE_URL = "https://127.0.0.1:8384";
+
+/** The default address for this device. */
+export function defaultBaseUrl(): string {
+	return Platform.isAndroidApp ? ANDROID_BASE_URL : DEFAULT_BASE_URL;
+}
 
 /** The secret holding this device's Syncthing API key in Obsidian's keychain. */
 export const API_KEY_SECRET = "syncthing-integration-api-key";
@@ -21,6 +29,8 @@ export interface SyncthingPluginSettings {
 export interface DeviceSettings {
 	/** Where Syncthing's GUI and REST API are served, including any reverse-proxy path. */
 	baseUrl: string;
+	/** The Syncthing program on desktop, or `""` to find it. */
+	cliPath: string;
 }
 
 /** Fields of 2.4.0 that other devices may still need to take over their settings. */
@@ -69,10 +79,16 @@ export function parseSettings(
 			? { typed: source.baseUrl, parsed: parseBaseUrl(source.baseUrl) }
 			: isRecord(source.configuration) && isRecord(source.configuration.url)
 				? legacyBaseUrl(source.configuration.url)
-				: { typed: DEFAULT_BASE_URL, parsed: DEFAULT_BASE_URL };
+				: { typed: defaultBaseUrl(), parsed: defaultBaseUrl() };
 	return {
 		settings: { devMode: saved.devMode === true },
-		device: { baseUrl: parsed instanceof Failure ? typed : parsed },
+		device: {
+			baseUrl: parsed instanceof Failure ? typed : parsed,
+			cliPath:
+				isRecord(storedDevice) && typeof storedDevice.cliPath === "string"
+					? storedDevice.cliPath
+					: "",
+		},
 		takeOver,
 		sharedApiKey:
 			typeof saved.api_key === "string" && saved.api_key !== ""
@@ -96,12 +112,12 @@ export function parseSettings(
  */
 export function parseBaseUrl(text: string): string | Failure {
 	const typed = text.trim();
-	if (typed === "") return DEFAULT_BASE_URL;
+	if (typed === "") return defaultBaseUrl();
 	let url: URL;
 	try {
 		url = new URL(typed);
 	} catch {
-		return new Failure(`"${typed}" is not a URL, such as ${DEFAULT_BASE_URL}.`);
+		return new Failure(`"${typed}" is not a URL, such as ${defaultBaseUrl()}.`);
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
 		return new Failure("The Syncthing URL must start with http:// or https://.");
@@ -138,7 +154,7 @@ function isLoopback(hostname: string): boolean {
 /**
  * Converts the address saved by 2.4.0, whose host field also accepted a
  * port or a path. Its untouched default, `http://localhost:8384`, becomes
- * Syncthing's default address {@link DEFAULT_BASE_URL}.
+ * this device's default address, see {@link defaultBaseUrl}.
  */
 function legacyBaseUrl(saved: Record<string, unknown>): {
 	typed: string;
@@ -164,6 +180,6 @@ function legacyBaseUrl(saved: Record<string, unknown>): {
 	const typed = (url.origin + url.pathname).replace(/\/+$/, "");
 	return {
 		typed,
-		parsed: parseBaseUrl(typed === "http://localhost:8384" ? DEFAULT_BASE_URL : typed),
+		parsed: parseBaseUrl(typed === "http://localhost:8384" ? defaultBaseUrl() : typed),
 	};
 }

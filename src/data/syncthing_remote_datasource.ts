@@ -98,9 +98,12 @@ export class SyncthingFromREST {
 				throw: false,
 			});
 		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
 			throw new RestFailure(
-				`Could not reach Syncthing at ${baseUrl}: ${
-					error instanceof Error ? error.message : String(error)
+				`Could not reach Syncthing at ${baseUrl}: ${reason}${
+					/cert|ssl|tls/i.test(reason)
+						? " Obsidian does not accept a self-signed certificate, such as the one Syncthing creates for its GUI."
+						: ""
 				}`
 			);
 		}
@@ -114,6 +117,11 @@ export class SyncthingFromREST {
 				`Syncthing answered HTTP ${response.status} for ${endpoint}.`
 			);
 		}
+		if (redirectsToHttps(response)) {
+			throw new RestFailure(
+				`Syncthing at ${baseUrl} serves its GUI over HTTPS only. Use https:// in the Syncthing URL.`
+			);
+		}
 		try {
 			return response.json as unknown;
 		} catch {
@@ -125,6 +133,19 @@ export class SyncthingFromREST {
 		return new RestFailure(
 			`${this.plugin.device.baseUrl} did not answer like Syncthing's REST API. Check the Syncthing URL.`
 		);
+	}
+}
+
+/**
+ * Syncthing with TLS answers plain HTTP with a 307 redirect to HTTPS, whose
+ * body is a link; some platforms hand that body back instead of following it.
+ */
+function redirectsToHttps(response: RequestUrlResponse): boolean {
+	if (response.status >= 300 && response.status < 400) return true;
+	try {
+		return /^\s*<a href="https:\/\//i.test(response.text);
+	} catch {
+		return false;
 	}
 }
 

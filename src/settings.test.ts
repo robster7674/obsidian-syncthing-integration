@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Failure } from "./models/failures";
+import { Platform } from "obsidian";
 import {
+	ANDROID_BASE_URL,
 	DEFAULT_BASE_URL,
+	defaultBaseUrl,
 	parseBaseUrl,
 	parseSettings,
 	sendsKeyInClear,
@@ -11,7 +14,7 @@ describe("parseSettings", () => {
 	it("gives the defaults when nothing was saved", () => {
 		expect(parseSettings(null, null)).toEqual({
 			settings: { devMode: false },
-			device: { baseUrl: DEFAULT_BASE_URL },
+			device: { baseUrl: DEFAULT_BASE_URL, cliPath: "" },
 			takeOver: false,
 			sharedApiKey: undefined,
 			shared: {},
@@ -23,11 +26,14 @@ describe("parseSettings", () => {
 	it("reads the synced settings and this device's settings apart", () => {
 		const loaded = parseSettings(
 			{ devMode: true },
-			{ baseUrl: "https://example.org/syncthing" },
+			{ baseUrl: "https://example.org/syncthing", cliPath: "/opt/syncthing" },
 		);
 
 		expect(loaded.settings).toEqual({ devMode: true });
-		expect(loaded.device).toEqual({ baseUrl: "https://example.org/syncthing" });
+		expect(loaded.device).toEqual({
+			baseUrl: "https://example.org/syncthing",
+			cliPath: "/opt/syncthing",
+		});
 		expect(loaded.rewrite).toBe(false);
 	});
 
@@ -124,6 +130,19 @@ describe("parseSettings", () => {
 
 		expect(device.baseUrl).toBe("http://my nas:8384");
 		expect(problem).toContain("is not a host name");
+	});
+});
+
+describe("defaultBaseUrl", () => {
+	it("is Syncthing-Fork's HTTPS address on Android", () => {
+		Platform.isAndroidApp = true;
+
+		expect(defaultBaseUrl()).toBe(ANDROID_BASE_URL);
+		expect(parseSettings(null, null).device.baseUrl).toBe(ANDROID_BASE_URL);
+	});
+
+	it("is Syncthing's default address elsewhere", () => {
+		expect(defaultBaseUrl()).toBe(DEFAULT_BASE_URL);
 	});
 });
 

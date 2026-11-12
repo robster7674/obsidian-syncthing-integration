@@ -1,89 +1,91 @@
-import { CliFailure } from "src/models/failures";
 import { Platform } from "obsidian";
+import type SyncthingPlugin from "src/main";
+import { CliFailure } from "src/models/failures";
+
+/** Where the syncthing-macos app keeps its Syncthing program. */
+export const MACOS_APP_BINARY =
+	"/Applications/Syncthing.app/Contents/Resources/syncthing/syncthing";
+const TIMEOUT_MS = 10_000;
 
 /**
- * CLI of Syncthing.
+ * CLI of Syncthing, on desktop only. It is used to check the installation and
+ * to read the API key; everything else goes through the REST API.
  * @see https://docs.syncthing.net/users/syncthing.html#syncthing
  */
 export class SyncthingFromCLI {
-	/**
-	 * Stop the Syncthing service using the CLI.
-	 */
-	async stopSyncthing(): Promise<boolean> {
-		const syncthingStop = "syncthing cli operations shutdown";
-		const response = this.runSyncthingCommand(syncthingStop);
-		if (response instanceof Error) {
-			throw new CliFailure(response.message);
-		}
-		return true;
-	}
-
-	/**
-	 * Start the Syncthing service using the CLI.
-	 */
-	async startSyncthing(): Promise<boolean> {
-		const syncthingStart = "syncthing";
-		const response = await this.runSyncthingCommand(syncthingStart);
-		if (response instanceof Error) {
-			throw new CliFailure(response.message);
-		}
-		return true;
-	}
+	constructor(private plugin: SyncthingPlugin) {}
 
 	/**
 	 * Get the version of Syncthing installation using the CLI.
 	 * This is used to check if Syncthing is installed.
 	 */
 	async getVersion(): Promise<string> {
-		const syncthingVersion = "syncthing --version";
-		const response = await this.runSyncthingCommand(syncthingVersion);
-		if (response instanceof Error) {
-			throw new CliFailure(response.message);
-		}
-		return response;
+		return (await this.run(["--version"])).trim();
 	}
 
 	/**
 	 * Get the API key of Syncthing installation using the CLI.
 	 */
 	async getAPIkey(): Promise<string> {
-		const response = await this.runSyncthingCommand(
-			"syncthing cli config gui apikey get"
-		);
-		if (response instanceof Error) {
-			throw new CliFailure("No API key found.");
-		}
-		return response.trim();
+		const key = (await this.run(["cli", "config", "gui", "apikey", "get"])).trim();
+		if (!key) throw new CliFailure("Syncthing has no API key set.");
+		return key;
 	}
 
-	private async runSyncthingCommand(
-		command: string
-	): Promise<string | Error> {
-		if (Platform.isMobileApp) {
-			return Error("CLI not supported on mobile.");
-		}
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const { promisify } = require("util");
-		// MacOS - try the syncthing-macos application package first, 
-		// otherwise we'll fall back to the regular path traversal search
-		if (Platform.isMacOS && command.startsWith("syncthing")) {
-			// application folder for syncthing-macos install
-			const APP_REF = "/Applications/Syncthing.app/Contents/Resources/syncthing/";
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
-			const { stat } = require("fs");
-			const statPromise = promisify(stat);
-			const stats = await statPromise(APP_REF);
-			if (stats.isDirectory()) {
-				command = APP_REF + command;
+	/**
+	 * The Syncthing program: the one set for this device, else the
+	 * syncthing-macos app's, else `syncthing` found on the PATH.
+	 */
+	binary(): string {
+		const configured = this.plugin.device.cliPath.trim();
+		if (configured) return configured;
+		if (Platform.isMacOS) {
+			try {
+				// eslint-disable-next-line @typescript-eslint/no-var-requires
+				const { existsSync } = require("fs");
+				if (existsSync(MACOS_APP_BINARY)) return MACOS_APP_BINARY;
+			} catch {
+				// Fall back to the PATH.
 			}
 		}
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const { exec } = require("child_process");
-		const execPromise = promisify(exec);
-		const result = await execPromise(command);
-		if (result.stderr) {
-			return Error(result.stderr);
+		return "syncthing";
+	}
+
+	/**
+	 * Runs Syncthing with `args`, without a shell, so a path with spaces or
+	 * shell characters is passed as it is.
+	 * @throws {CliFailure} when the program cannot run or exits with an error.
+	 */
+	private run(args: string[]): Promise<string> {
+		if (Platform.isMobileApp) {
+			return Promise.reject(
+				new CliFailure("The Syncthing command is not available on mobile.")
+			);
 		}
-		return result.stdout;
+		const binary = this.binary();
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const { execFile } = require("child_process");
+		return new Promise((resolve, reject) => {
+			execFile(
+				binary,
+				args,
+				{ timeout: TIMEOUT_MS, windowsHide: true },
+				(
+					error: (Error & { code?: unknown }) | null,
+					stdout: string,
+					stderr: string
+				) => {
+					if (!error) {
+						resolve(String(stdout));
+						return;
+					}
+					const reason =
+						error.code === "ENOENT"
+							? "the program was not found. Set the path to Syncthing in the plugin settings."
+							: String(stderr).trim() || error.message;
+					reject(new CliFailure(`Running ${binary} failed: ${reason}`));
+				}
+			);
+		});
 	}
 }
