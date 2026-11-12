@@ -387,3 +387,64 @@ describe("ConflictResolver.restoreAsOriginal", () => {
 		expect(memory.content(CONFLICT)).toBe("remote");
 	});
 });
+
+describe("ConflictResolver in hidden folders", () => {
+	const HIDDEN_ORIGINAL = ".obsidian/app.json";
+	const HIDDEN_CONFLICT = ".obsidian/app.sync-conflict-20220101-000000-BBBBBBB.json";
+	const encode = (text: string) => new TextEncoder().encode(text);
+
+	function hiddenSetup() {
+		const memory = makeMemoryVault({});
+		memory.hidden.set(HIDDEN_ORIGINAL, encode("local"));
+		memory.hidden.set(HIDDEN_CONFLICT, encode("remote"));
+		return { memory, resolver: new ConflictResolver(memory.app) };
+	}
+
+	it("keeps the original by trashing the conflict", async () => {
+		const { memory, resolver } = hiddenSetup();
+
+		await resolver.keepHiddenOriginal(HIDDEN_CONFLICT);
+
+		expect(memory.hidden.has(HIDDEN_CONFLICT)).toBe(false);
+		expect(trashedText(memory)).toEqual([{ path: HIDDEN_CONFLICT, content: "remote" }]);
+	});
+
+	it("keeps the conflict, with the previous original in the trash", async () => {
+		const { memory, resolver } = hiddenSetup();
+
+		await resolver.keepHiddenConflict(HIDDEN_ORIGINAL, HIDDEN_CONFLICT, { size: 5, mtime: 0 });
+
+		expect(new TextDecoder().decode(memory.hidden.get(HIDDEN_ORIGINAL))).toBe("remote");
+		expect(memory.hidden.has(HIDDEN_CONFLICT)).toBe(false);
+		expect(trashedText(memory)).toEqual([
+			{ path: expect.stringMatching(/^\.obsidian\/app\.before-accepting-conflict-.*\.json$/), content: "local" },
+			{ path: HIDDEN_CONFLICT, content: "remote" },
+		]);
+	});
+
+	it("restores a conflict whose original is gone, refusing a taken path", async () => {
+		const { memory, resolver } = hiddenSetup();
+		memory.app.vault.adapter.rename = vi.fn(async (from: string, to: string) => {
+			memory.hidden.set(to, memory.hidden.get(from) as Uint8Array);
+			memory.hidden.delete(from);
+		});
+
+		await expect(
+			resolver.restoreHiddenAsOriginal(HIDDEN_CONFLICT, HIDDEN_ORIGINAL),
+		).rejects.toThrow("already exists");
+		memory.hidden.delete(HIDDEN_ORIGINAL);
+		await resolver.restoreHiddenAsOriginal(HIDDEN_CONFLICT, HIDDEN_ORIGINAL);
+
+		expect(new TextDecoder().decode(memory.hidden.get(HIDDEN_ORIGINAL))).toBe("remote");
+	});
+
+	it("refuses when the original changed since it was listed", async () => {
+		const { memory, resolver } = hiddenSetup();
+		memory.mtimes.set(HIDDEN_ORIGINAL, 42);
+
+		await expect(
+			resolver.keepHiddenConflict(HIDDEN_ORIGINAL, HIDDEN_CONFLICT, { size: 5, mtime: 0 }),
+		).rejects.toThrow("changed while resolving");
+		expect(new TextDecoder().decode(memory.hidden.get(HIDDEN_ORIGINAL))).toBe("local");
+	});
+});

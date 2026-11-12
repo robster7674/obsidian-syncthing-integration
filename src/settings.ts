@@ -20,6 +20,8 @@ export const DEVICE_SETTINGS_KEY = "syncthing-integration-device";
 /** Settings saved in `data.json`, which syncs with the vault. */
 export interface SyncthingPluginSettings {
 	devMode: boolean;
+	/** Whether the conflicts list also searches the vault's hidden folders. */
+	hiddenConflicts: boolean;
 }
 
 /**
@@ -83,7 +85,10 @@ export function parseSettings(
 				? legacyBaseUrl(source.configuration.url)
 				: { typed: defaultBaseUrl(), parsed: defaultBaseUrl() };
 	return {
-		settings: { devMode: saved.devMode === true },
+		settings: {
+			devMode: saved.devMode === true,
+			hiddenConflicts: saved.hiddenConflicts === true,
+		},
 		device: {
 			baseUrl: parsed instanceof Failure ? typed : parsed,
 			cliPath:

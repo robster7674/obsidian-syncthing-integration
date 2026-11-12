@@ -36,6 +36,7 @@ const SHARED_DATA = {
 	api_key: LEGACY_DATA.api_key,
 	configuration: LEGACY_DATA.configuration,
 	devMode: true,
+	hiddenConflicts: false,
 };
 
 describe("SyncthingPlugin.loadSettings", () => {
@@ -83,7 +84,7 @@ describe("SyncthingPlugin.loadSettings", () => {
 
 		await plugin.removeSharedSettings();
 
-		expect(saved()).toEqual({ devMode: true });
+		expect(saved()).toEqual({ devMode: true, hiddenConflicts: false });
 		expect(plugin.hasSharedSettings()).toBe(false);
 		expect(plugin.getApiKey()).toBe("key-from-data-json");
 	});

@@ -174,8 +174,13 @@ export function originalPathOf(file: TFile): string | Failure {
 }
 
 /** The folder of `file`, with a trailing `/`, or `""` at the vault's root. */
-export function folderOf(file: TFile): string {
+export function folderOf(file: { path: string; name: string }): string {
 	return file.path.slice(0, file.path.length - file.name.length);
+}
+
+/** The last segment of a vault path. */
+export function nameOf(path: string): string {
+	return path.slice(path.lastIndexOf("/") + 1);
 }
 
 /**

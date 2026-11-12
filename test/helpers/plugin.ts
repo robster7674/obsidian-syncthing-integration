@@ -73,7 +73,7 @@ export function makePlugin(
 	const plugin: FakePlugin = {
 		app,
 		vault,
-		settings: { devMode: settings.devMode ?? false },
+		settings: { devMode: settings.devMode ?? false, hiddenConflicts: false },
 		device: { baseUrl: settings.baseUrl ?? DEFAULT_BASE_URL, cliPath: "", folderId: "" },
 		apiKey: settings.apiKey ?? "",
 		getApiKey: () => plugin.apiKey,
