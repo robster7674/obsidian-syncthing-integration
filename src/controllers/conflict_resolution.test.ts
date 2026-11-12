@@ -286,6 +286,65 @@ describe("ConflictResolver with an expected original", () => {
 	});
 });
 
+describe("ConflictResolver with a file not shown as text", () => {
+	it("refuses to replace an original whose size or time changed since it was shown", async () => {
+		const { memory, resolver } = setup();
+		const original = memory.file(ORIGINAL);
+		const shown = { size: 5, mtime: original.stat.mtime };
+
+		await expect(
+			resolver.keepConflict(original, memory.file(CONFLICT), { ...shown, mtime: 1 }),
+		).rejects.toThrow("changed while resolving");
+		await resolver.keepConflict(original, memory.file(CONFLICT), shown);
+
+		expect(memory.content(ORIGINAL)).toBe("remote");
+	});
+});
+
+describe("ConflictResolver.keepBoth", () => {
+	const properties = {
+		filename: "Note",
+		date: "20220101",
+		time: "000000",
+		dateTime: new Date(2022, 0, 1),
+		modifiedBy: "BBBBBBB",
+		extension: "md",
+		originalName: "Note.md",
+	};
+
+	it("renames the conflict next to the original, keeping both", async () => {
+		const { memory, resolver } = setup();
+
+		const path = await resolver.keepBoth(memory.file(CONFLICT), properties);
+
+		expect(path).toBe("b/Note (conflict from BBBBBBB, 2022-01-01 000000).md");
+		expect(memory.content(path)).toBe("remote");
+		expect(memory.content(ORIGINAL)).toBe("local");
+		expect(memory.trashed).toEqual([]);
+	});
+
+	it("leaves out the device when the name has none", async () => {
+		const { memory, resolver } = setup();
+
+		await expect(
+			resolver.keepBoth(memory.file(CONFLICT), { ...properties, modifiedBy: "" }),
+		).resolves.toBe("b/Note (conflict 2022-01-01 000000).md");
+	});
+
+	it("refuses a name that is taken", async () => {
+		const memory = makeMemoryVault({
+			[CONFLICT]: "remote",
+			"b/note (conflict from BBBBBBB, 2022-01-01 000000).md": "other",
+		});
+		const resolver = new ConflictResolver(memory.app);
+
+		await expect(resolver.keepBoth(memory.file(CONFLICT), properties)).rejects.toThrow(
+			"already exists",
+		);
+		expect(memory.content(CONFLICT)).toBe("remote");
+	});
+});
+
 describe("ConflictResolver.restoreAsOriginal", () => {
 	it("gives an orphaned conflict its original path", async () => {
 		const memory = makeMemoryVault({ [CONFLICT]: "remote" });
