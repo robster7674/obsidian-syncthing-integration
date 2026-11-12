@@ -89,6 +89,7 @@ export class Vault {
 		return file;
 	});
 	delete = vi.fn(async (_file: TAbstractFile): Promise<void> => undefined);
+	on = vi.fn((_name: string, _callback: (...args: unknown[]) => unknown) => ({}));
 	adapter = { exists: vi.fn(async () => false), rename: vi.fn(async () => undefined) };
 }
 
@@ -112,6 +113,9 @@ export class App {
 		getActiveFile: vi.fn((): TFile | null => null),
 		getLeaf: vi.fn(),
 		on: vi.fn(),
+		onLayoutReady: vi.fn((callback: () => unknown) => {
+			callback();
+		}),
 	};
 	fileManager = {};
 	secretStorage = new SecretStorage();
