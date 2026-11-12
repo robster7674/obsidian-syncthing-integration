@@ -225,39 +225,6 @@ export function isStringArray(value: unknown): value is string[] {
 	return isArrayOf(value, (item): item is string => typeof item === "string");
 }
 
-export function isNumberArray(value: unknown): value is number[] {
-	return isArrayOf(value, (item): item is number => typeof item === "number");
-}
-
-// /**
-//  * Validates that a JSON object has the expected fields and types.
-//  * @param json The JSON object to validate.
-//  * @param field A field to validate.
-//  * @param type The type of the field.
-//  * @returns `true` if the JSON object is valid, `false` otherwise.
-//  */
-// export function validateField(
-// 	json: unknown,
-// 	field: string,
-// 	type: "string" | "number" | "boolean" | "object" | "array"
-// ): json is object & Record<typeof field, typeof type> {
-// 	if (typeof json !== "object" || json === null) {
-// 		return false;
-// 	}
-// 	for (const [key, type] of Object.entries(fields)) {
-// 		if (!json.hasOwnProperty(key)) {
-// 			return false;
-// 		}
-// 		if (typeof json[key as keyof typeof json] !== typeof type) {
-// 			return false;
-// 		}
-// 	}
-// 	return true;
-// }
-
-// let json: unknown = { test: 42 };
-// validateJSON(json, { test: 42 });
-// json;
 
 /**
  * Validates that a JSON object has the expected field and type.
@@ -309,19 +276,3 @@ export function logErrorIfNotValidJson<T extends string, K extends keyof JsonTyp
 		);
 	}
 }
-// export function throwIfNotValid<T extends string>(
-// 	json: unknown,
-// 	field: T,
-// 	type: "string" | "number" | "boolean" | "object"
-// ): asserts json is object & Record<T, typeof checkedType> {
-// 	let checkedType;
-// 	if (type === "string") checkedType = "";
-// 	else if (type === "number") checkedType = 42;
-// 	else if (type === "boolean") checkedType = true;
-// 	else if (type === "object") checkedType = {};
-// 	if (!validateField(json, field, checkedType)) {
-// 		throw new Error(
-// 			`Error validating JSON: ${field} is not present or is not of type ${typeof type}. Got ${json}.`
-// 		);
-// 	}
-// }

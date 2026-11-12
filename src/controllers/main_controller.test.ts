@@ -27,6 +27,8 @@ interface ControllerHarness {
 		ping: Mock;
 		getDevices: Mock;
 		getAllFolders: Mock;
+		getMyID: Mock;
+		getConnectedDevices: Mock;
 	};
 	plugin: FakePlugin;
 }
@@ -40,6 +42,8 @@ function makeHarness(files: TFile[] = [], settings = {}): ControllerHarness {
 		ping: vi.fn(),
 		getDevices: vi.fn(),
 		getAllFolders: vi.fn(),
+		getMyID: vi.fn(),
+		getConnectedDevices: vi.fn(),
 	};
 	const plugin = makePlugin(files, settings);
 	const controller = new SyncthingController(
@@ -296,21 +300,20 @@ describe("SyncthingController.getAPIKey", () => {
 	});
 });
 
-describe("SyncthingController datasource delegation", () => {
-	it("getDevices delegates to the REST datasource", async () => {
-		const { controller, rest } = makeHarness();
-		const devices = [{ deviceID: "A" }];
-		rest.getDevices.mockResolvedValue(devices);
-
-		await expect(controller.getDevices()).resolves.toBe(devices);
-	});
-
-	it("getFolders delegates to the REST datasource", async () => {
+describe("SyncthingController.getOverview", () => {
+	it("tells this device apart from the others by the ID Syncthing reports", async () => {
 		const { controller, rest } = makeHarness();
 		const folders = [{ id: "default" }];
 		rest.getAllFolders.mockResolvedValue(folders);
+		rest.getDevices.mockResolvedValue([{ deviceID: "A" }, { deviceID: "B" }]);
+		rest.getMyID.mockResolvedValue("B");
+		rest.getConnectedDevices.mockResolvedValue(new Set(["A"]));
 
-		await expect(controller.getFolders()).resolves.toBe(folders);
+		await expect(controller.getOverview()).resolves.toEqual({
+			folders,
+			thisDevice: { deviceID: "B" },
+			otherDevices: [{ deviceID: "A" }],
+			connected: new Set(["A"]),
+		});
 	});
-
 });

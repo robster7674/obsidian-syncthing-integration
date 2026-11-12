@@ -7,7 +7,6 @@ import {
 	formatBytes,
 	isArrayOf,
 	isConflictFilename,
-	isNumberArray,
 	isStringArray,
 	logErrorIfNotValidJson,
 	originalPathOf,
@@ -219,11 +218,6 @@ describe("type guards", () => {
 		expect(isStringArray({})).toBe(false);
 	});
 
-	it("isNumberArray", () => {
-		expect(isNumberArray([1, 2])).toBe(true);
-		expect(isNumberArray([1, "2"])).toBe(false);
-		expect(isNumberArray(null)).toBe(false);
-	});
 });
 
 describe("validateJsonField", () => {
