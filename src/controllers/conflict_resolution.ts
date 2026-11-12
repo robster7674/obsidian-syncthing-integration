@@ -30,9 +30,36 @@ export class ConflictResolver {
 		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
 		return this.replace(
-			original,
-			conflict,
+			this.inVault(original),
+			this.inVault(conflict),
 			await this.app.vault.readBinary(conflict),
+			"before-accepting-conflict",
+			expectedOriginal
+		);
+	}
+
+	/**
+	 * For a conflict in a hidden folder, which the vault does not index:
+	 * the conflict goes to the trash.
+	 */
+	async keepHiddenOriginal(conflictPath: string): Promise<void> {
+		await this.hidden(conflictPath).trash();
+	}
+
+	/**
+	 * For a conflict in a hidden folder: its bytes replace the original's,
+	 * which go to the trash, as {@link keepConflict} does.
+	 * @param expectedOriginal the original's size and modification time when it was listed.
+	 */
+	async keepHiddenConflict(
+		originalPath: string,
+		conflictPath: string,
+		expectedOriginal?: { size: number; mtime: number }
+	): Promise<boolean> {
+		return this.replace(
+			this.hidden(originalPath),
+			this.hidden(conflictPath),
+			await this.app.vault.adapter.readBinary(conflictPath),
 			"before-accepting-conflict",
 			expectedOriginal
 		);
@@ -50,8 +77,8 @@ export class ConflictResolver {
 		base?: string
 	): Promise<boolean> {
 		return this.replace(
-			original,
-			conflict,
+			this.inVault(original),
+			this.inVault(conflict),
 			new TextEncoder().encode(merged).buffer as ArrayBuffer,
 			"before-merge",
 			base
@@ -103,35 +130,34 @@ export class ConflictResolver {
 	 * `content`, only the conflict is left to trash, whatever was expected.
 	 */
 	private async replace(
-		original: TFile,
-		conflict: TFile,
+		original: StoredFile,
+		conflict: StoredFile,
 		content: ArrayBuffer,
 		backupLabel: string,
 		expectedOriginal?: ExpectedOriginal
 	): Promise<boolean> {
-		const vault = this.app.vault;
 		const changedMeanwhile = () =>
 			new Error(
 				`${original.path} changed while resolving the conflict. Nothing was replaced; review it and try again.`
 			);
-		const previous = await vault.readBinary(original);
+		const previous = await original.read();
 		const changed = !sameBytes(previous, content);
 		if (
 			changed &&
 			expectedOriginal !== undefined &&
-			!matches(original, previous, expectedOriginal)
+			!(await matches(original, previous, expectedOriginal))
 		) {
 			throw changedMeanwhile();
 		}
 		if (changed) {
-			await this.trashCopy(original, previous, backupLabel);
-			if (!sameBytes(previous, await vault.readBinary(original))) {
+			await this.trashCopy(original.path, previous, backupLabel);
+			if (!sameBytes(previous, await original.read())) {
 				throw changedMeanwhile();
 			}
-			await vault.modifyBinary(original, content);
+			await original.write(content);
 		}
 		try {
-			await vault.trash(conflict, true);
+			await conflict.trash();
 		} catch (error) {
 			throw new Error(
 				changed
@@ -149,19 +175,17 @@ export class ConflictResolver {
 	 * Syncthing waits before it scans a change (10 s by default).
 	 */
 	private async trashCopy(
-		file: TFile,
+		originalPath: string,
 		content: ArrayBuffer,
 		label: string
 	): Promise<void> {
 		const adapter = this.app.vault.adapter;
 		const path = normalizePath(
-			`${this.app.vault.configDir}/${backupName(file, label)}`
+			`${this.app.vault.configDir}/${backupName(originalPath, label)}`
 		);
 		await adapter.writeBinary(path, content);
 		try {
-			if (!(await adapter.trashSystem(path))) {
-				await adapter.trashLocal(path);
-			}
+			await this.trashPath(path);
 		} catch (error) {
 			await adapter.remove(path).catch((cleanupError) =>
 				console.error(`Could not remove ${path}`, cleanupError)
@@ -169,20 +193,61 @@ export class ConflictResolver {
 			throw error;
 		}
 	}
+
+	/** Moves a file the vault does not index to the system trash, or to Obsidian's `.trash` folder. */
+	private async trashPath(path: string): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		if (!(await adapter.trashSystem(path))) {
+			await adapter.trashLocal(path);
+		}
+	}
+
+	/** A vault file, changed through the vault so that Obsidian and other plugins see it. */
+	private inVault(file: TFile): StoredFile {
+		const vault = this.app.vault;
+		return {
+			path: file.path,
+			read: () => vault.readBinary(file),
+			write: (data) => vault.modifyBinary(file, data),
+			trash: () => vault.trash(file, true),
+			mtime: async () => file.stat.mtime,
+		};
+	}
+
+	/** A file in a hidden folder, which only the adapter reaches. */
+	private hidden(path: string): StoredFile {
+		const adapter = this.app.vault.adapter;
+		return {
+			path,
+			read: () => adapter.readBinary(path),
+			write: (data) => adapter.writeBinary(path, data),
+			trash: () => this.trashPath(path),
+			mtime: async () => (await adapter.stat(path))?.mtime,
+		};
+	}
+}
+
+/** A file that a resolution reads, replaces or trashes. */
+interface StoredFile {
+	path: string;
+	read(): Promise<ArrayBuffer>;
+	write(data: ArrayBuffer): Promise<void>;
+	trash(): Promise<void>;
+	mtime(): Promise<number | undefined>;
 }
 
 /** The original as the user saw it: its text, or its size and modification time. */
 export type ExpectedOriginal = string | { size: number; mtime: number };
 
-function matches(
-	original: TFile,
+async function matches(
+	original: StoredFile,
 	content: ArrayBuffer,
 	expected: ExpectedOriginal
-): boolean {
+): Promise<boolean> {
 	if (typeof expected !== "string") {
 		return (
 			content.byteLength === expected.size &&
-			original.stat.mtime === expected.mtime
+			(await original.mtime()) === expected.mtime
 		);
 	}
 	return withoutBom(new TextDecoder().decode(content)) === withoutBom(expected);
@@ -199,8 +264,11 @@ function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
 	return left.every((byte, index) => byte === right[index]);
 }
 
-function backupName(file: TFile, label: string): string {
+function backupName(path: string, label: string): string {
 	const stamp = new Date().toISOString().replace(/[-:.]/g, "");
-	const extension = file.extension ? `.${file.extension}` : "";
-	return `${file.basename}.${label}-${stamp}${extension}`;
+	const name = path.split("/").pop() ?? path;
+	const dot = name.lastIndexOf(".");
+	const [basename, extension] =
+		dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+	return `${basename}.${label}-${stamp}${extension}`;
 }

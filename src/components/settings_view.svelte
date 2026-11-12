@@ -382,6 +382,21 @@
 	</button>
 </ObsidianSettingsItem>
 
+<!-- Conflicts in hidden folders -->
+<ObsidianSettingsItem
+	name="Look for conflicts in hidden folders"
+	description="Also list Syncthing conflicts in folders whose names start with a dot, such as the configuration folder, which Obsidian does not show. Obsidian's trash and Syncthing's own folders are not searched."
+>
+	<ObsidianToggle
+		slot="control"
+		value={parent.plugin.settings.hiddenConflicts}
+		callback={async (value) => {
+			parent.plugin.settings.hiddenConflicts = value;
+			await parent.plugin.saveSettings();
+		}}
+	/>
+</ObsidianSettingsItem>
+
 <!-- Ignoring files -->
 <SyncthingIgnoreFiles {parent} {vaultFolder} />
 

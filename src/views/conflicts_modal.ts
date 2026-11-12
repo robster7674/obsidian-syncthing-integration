@@ -1,6 +1,8 @@
 import { type App, Modal } from "obsidian";
 import { mount, unmount } from "svelte";
 import ConflictsListComponent from "../components/conflicts_list.svelte";
+import HiddenConflictsList from "../components/hidden_conflicts_list.svelte";
+import { findHiddenConflicts } from "../controllers/hidden_conflicts";
 import { type SyncthingController } from "../controllers/main_controller";
 
 /**
@@ -10,7 +12,11 @@ import { type SyncthingController } from "../controllers/main_controller";
  */
 export class ConflictsModal extends Modal {
 	private components: Array<ReturnType<typeof mount>> = [];
-	constructor(app: App, public syncthingController: SyncthingController) {
+	constructor(
+		app: App,
+		public syncthingController: SyncthingController,
+		private searchHidden = false
+	) {
 		super(app);
 	}
 
@@ -28,6 +34,20 @@ export class ConflictsModal extends Modal {
 				},
 			})
 		);
+		if (!this.searchHidden) return;
+		try {
+			const hidden = await findHiddenConflicts(this.app.vault.adapter);
+			this.components.push(
+				mount(HiddenConflictsList, {
+					target: this.contentEl,
+					props: { app: this.app, ...hidden },
+				})
+			);
+		} catch (error) {
+			this.contentEl.createEl("p", {
+				text: `Could not search the hidden folders: ${error}`,
+			});
+		}
 	}
 
 	onClose() {
