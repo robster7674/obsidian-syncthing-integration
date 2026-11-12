@@ -57,6 +57,21 @@ describe("findHiddenConflicts", () => {
 		]);
 	});
 
+	it("finds dot-folders and dot-files below ordinary folders, but not indexed files", async () => {
+		const result = await findHiddenConflicts(
+			adapter([
+				"Projects/.excalidraw/x.sync-conflict-20260101-120000-ABCDEFG.json",
+				".gitignore.sync-conflict-20260101-120000-ABCDEFG",
+				"notes/Note.sync-conflict-20220101-000000-BBBBBBB.md",
+			]),
+		);
+
+		expect(result.conflicts.map((conflict) => conflict.originalPath).sort()).toEqual([
+			".gitignore",
+			"Projects/.excalidraw/x.json",
+		]);
+	});
+
 	it("does not search the trash, version control or Syncthing's own folders", async () => {
 		const result = await findHiddenConflicts(
 			adapter([

@@ -414,6 +414,7 @@
 			It allows to test the plugin's conflict resolution system.
 		</svelte:fragment>
 		<ObsidianToggle
+			value={parent.plugin.settings.devMode}
 			callback={async (value) => {
 				parent.plugin.settings.devMode = value;
 				await parent.plugin.saveSettings();

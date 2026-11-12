@@ -422,6 +422,22 @@ describe("ConflictResolver in hidden folders", () => {
 		]);
 	});
 
+	it("restores a conflict whose original is gone, refusing a taken path", async () => {
+		const { memory, resolver } = hiddenSetup();
+		memory.app.vault.adapter.rename = vi.fn(async (from: string, to: string) => {
+			memory.hidden.set(to, memory.hidden.get(from) as Uint8Array);
+			memory.hidden.delete(from);
+		});
+
+		await expect(
+			resolver.restoreHiddenAsOriginal(HIDDEN_CONFLICT, HIDDEN_ORIGINAL),
+		).rejects.toThrow("already exists");
+		memory.hidden.delete(HIDDEN_ORIGINAL);
+		await resolver.restoreHiddenAsOriginal(HIDDEN_CONFLICT, HIDDEN_ORIGINAL);
+
+		expect(new TextDecoder().decode(memory.hidden.get(HIDDEN_ORIGINAL))).toBe("remote");
+	});
+
 	it("refuses when the original changed since it was listed", async () => {
 		const { memory, resolver } = hiddenSetup();
 		memory.mtimes.set(HIDDEN_ORIGINAL, 42);

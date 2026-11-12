@@ -12,6 +12,7 @@ import { type SyncthingController } from "../controllers/main_controller";
  */
 export class ConflictsModal extends Modal {
 	private components: Array<ReturnType<typeof mount>> = [];
+	private isOpen = false;
 	constructor(
 		app: App,
 		public syncthingController: SyncthingController,
@@ -21,6 +22,7 @@ export class ConflictsModal extends Modal {
 	}
 
 	async onOpen() {
+		this.isOpen = true;
 		this.titleEl.style.textAlign = "center";
 		const { conflicts, unrecognised } =
 			await this.syncthingController.getConflicts();
@@ -37,6 +39,7 @@ export class ConflictsModal extends Modal {
 		if (!this.searchHidden) return;
 		try {
 			const hidden = await findHiddenConflicts(this.app.vault.adapter);
+			if (!this.isOpen) return;
 			this.components.push(
 				mount(HiddenConflictsList, {
 					target: this.contentEl,
@@ -44,6 +47,7 @@ export class ConflictsModal extends Modal {
 				})
 			);
 		} catch (error) {
+			if (!this.isOpen) return;
 			this.contentEl.createEl("p", {
 				text: `Could not search the hidden folders: ${error}`,
 			});
@@ -51,6 +55,7 @@ export class ConflictsModal extends Modal {
 	}
 
 	onClose() {
+		this.isOpen = false;
 		this.components.forEach((component) => void unmount(component));
 		const { contentEl } = this;
 		contentEl.empty();

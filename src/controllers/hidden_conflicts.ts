@@ -1,7 +1,7 @@
 import { type DataAdapter } from "obsidian";
 import { type ConflictFilename } from "src/models/entities";
 import { Failure } from "src/models/failures";
-import { parseConflictFilename } from "./utils";
+import { folderOf, nameOf, parseConflictFilename } from "./utils";
 
 /** A Syncthing conflict in a hidden folder, which the vault does not index. */
 export interface HiddenConflict {
@@ -19,12 +19,14 @@ export interface HiddenConflict {
  * Syncthing's own folders, where conflicts are not the user's files.
  */
 const SKIPPED = new Set([".trash", ".git", ".stversions", ".stfolder", "node_modules"]);
-const MAX_ENTRIES = 20_000;
+const MAX_ENTRIES = 100_000;
 
 /**
- * Finds Syncthing conflicts in the vault's hidden folders, such as the
- * configuration folder or per-device `.obsidian_*` folders (upstream #271).
- * It stops after {@link MAX_ENTRIES} files and folders and says so.
+ * Finds Syncthing conflicts that the vault does not index: in folders whose
+ * names start with a dot at any depth, such as the configuration folder or
+ * per-device `.obsidian_*` folders (upstream #271), and dot-files. It walks
+ * the vault through the adapter and stops after {@link MAX_ENTRIES} files
+ * and folders, saying so.
  */
 export async function findHiddenConflicts(adapter: DataAdapter): Promise<{
 	conflicts: HiddenConflict[];
@@ -34,46 +36,50 @@ export async function findHiddenConflicts(adapter: DataAdapter): Promise<{
 	const conflicts: HiddenConflict[] = [];
 	const unrecognised: string[] = [];
 	let seen = 0;
-	const root = await adapter.list("");
-	const queue = root.folders.filter((folder) => isSearched(folder));
-	while (queue.length > 0) {
-		const folder = queue.shift() as string;
-		const listed = await adapter.list(folder);
+	let truncated = false;
+	const queue = [""];
+	while (queue.length > 0 && !truncated) {
+		const listed = await adapter.list(queue.shift() as string);
 		seen += listed.files.length + listed.folders.length;
-		if (seen > MAX_ENTRIES) return { conflicts, unrecognised, truncated: true };
-		queue.push(...listed.folders.filter((child) => !SKIPPED.has(nameOf(child))));
-		for (const path of listed.files) {
-			if (!nameOf(path).includes(".sync-conflict-")) continue;
-			const properties = parseConflictFilename(nameOf(path));
-			if (properties instanceof Failure) {
-				unrecognised.push(path);
-				continue;
-			}
-			const stat = await adapter.stat(path);
-			if (!stat) continue;
-			const originalPath = path.slice(0, path.length - nameOf(path).length) + properties.originalName;
-			const original = await adapter.stat(originalPath);
-			conflicts.push({
-				path,
-				originalPath,
-				properties,
-				size: stat.size,
-				mtime: stat.mtime,
-				original:
-					original?.type === "file"
-						? { size: original.size, mtime: original.mtime }
-						: undefined,
-			});
+		truncated = seen > MAX_ENTRIES;
+		if (!truncated) {
+			queue.push(...listed.folders.filter((child) => !SKIPPED.has(nameOf(child))));
+		}
+		const found = listed.files.filter(
+			(path) => isHidden(path) && nameOf(path).includes(".sync-conflict-")
+		);
+		const described = await Promise.all(found.map((path) => describe(adapter, path)));
+		for (const [index, conflict] of described.entries()) {
+			if (conflict instanceof Failure) unrecognised.push(found[index]);
+			else if (conflict) conflicts.push(conflict);
 		}
 	}
-	return { conflicts, unrecognised, truncated: false };
+	return { conflicts, unrecognised, truncated };
 }
 
-function isSearched(folder: string): boolean {
-	const name = nameOf(folder);
-	return name.startsWith(".") && !SKIPPED.has(name);
+/** The conflict at `path` with its original's details, `undefined` when it is gone, or a Failure for a name Syncthing does not write. */
+async function describe(
+	adapter: DataAdapter,
+	path: string
+): Promise<HiddenConflict | Failure | undefined> {
+	const name = nameOf(path);
+	const properties = parseConflictFilename(name);
+	if (properties instanceof Failure) return properties;
+	const originalPath = folderOf({ path, name }) + properties.originalName;
+	const [stat, original] = await Promise.all([adapter.stat(path), adapter.stat(originalPath)]);
+	if (!stat) return undefined;
+	return {
+		path,
+		originalPath,
+		properties,
+		size: stat.size,
+		mtime: stat.mtime,
+		original:
+			original?.type === "file" ? { size: original.size, mtime: original.mtime } : undefined,
+	};
 }
 
-function nameOf(path: string): string {
-	return path.split("/").pop() ?? path;
+/** Whether the vault leaves `path` out of its index: any segment starts with a dot. */
+function isHidden(path: string): boolean {
+	return path.split("/").some((segment) => segment.startsWith("."));
 }

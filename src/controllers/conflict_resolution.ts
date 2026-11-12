@@ -1,6 +1,6 @@
 import { type App, normalizePath, type TFile } from "obsidian";
 import { type ConflictFilename } from "src/models/entities";
-import { folderOf } from "./utils";
+import { folderOf, nameOf } from "./utils";
 
 /**
  * Resolves Syncthing conflicts. Every action moves the content it replaces
@@ -44,6 +44,18 @@ export class ConflictResolver {
 	 */
 	async keepHiddenOriginal(conflictPath: string): Promise<void> {
 		await this.hidden(conflictPath).trash();
+	}
+
+	/**
+	 * For a conflict in a hidden folder whose original no longer exists: the
+	 * conflict takes the original's path, unless something is there.
+	 */
+	async restoreHiddenAsOriginal(conflictPath: string, originalPath: string): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		if (await adapter.exists(originalPath)) {
+			throw new Error(`${originalPath} already exists.`);
+		}
+		await adapter.rename(conflictPath, originalPath);
 	}
 
 	/**
@@ -266,7 +278,7 @@ function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
 
 function backupName(path: string, label: string): string {
 	const stamp = new Date().toISOString().replace(/[-:.]/g, "");
-	const name = path.split("/").pop() ?? path;
+	const name = nameOf(path);
 	const dot = name.lastIndexOf(".");
 	const [basename, extension] =
 		dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
