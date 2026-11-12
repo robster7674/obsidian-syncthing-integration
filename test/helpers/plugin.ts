@@ -8,17 +8,9 @@
 import { vi } from "vitest";
 import type { App, TFile } from "obsidian";
 import type SyncthingPlugin from "src/main";
-import type { SyncthingURL } from "src/models/entities";
+import { DEFAULT_BASE_URL, type SyncthingPluginSettings } from "src/settings";
 
-export interface FakePluginSettings {
-	api_key?: string;
-	gui_username?: string;
-	gui_password?: string;
-	configuration?: {
-		url?: SyncthingURL;
-	};
-	devMode?: boolean;
-}
+export type FakePluginSettings = Partial<SyncthingPluginSettings>;
 
 /** A vault whose methods are Vitest mocks. */
 export interface FakeVault {
@@ -38,12 +30,6 @@ export interface FakePlugin {
 	loadData: ReturnType<typeof vi.fn>;
 	saveData: ReturnType<typeof vi.fn>;
 }
-
-export const DEFAULT_URL: SyncthingURL = {
-	protocol: "http",
-	ip_address: "localhost",
-	port: 8384,
-};
 
 /**
  * Create a fake plugin whose vault returns the provided files.
@@ -76,7 +62,7 @@ export function makePlugin(
 		vault,
 		settings: {
 			api_key: "",
-			configuration: { url: { ...DEFAULT_URL } },
+			baseUrl: DEFAULT_BASE_URL,
 			devMode: false,
 			...settings,
 		},
