@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import type { SyncthingSettingTab } from "src/views/settings_tab";
 import { Failure } from "src/models/failures";
+import type { VaultFolder } from "src/controllers/vault_folder";
 import SyncthingIgnoreFiles from "./syncthing_ignore_files.svelte";
 
 afterEach(() => {
@@ -16,7 +17,7 @@ const ROOT_FOLDER = {
 	chosen: false,
 };
 
-function setup(content: string | undefined, vaultFolder: unknown = ROOT_FOLDER) {
+function setup(content: string | undefined, vaultFolder: object | "loading" = ROOT_FOLDER) {
 	const files = new Map<string, string>();
 	if (content !== undefined) files.set(".stignore", content);
 	const parent = {
@@ -35,7 +36,13 @@ function setup(content: string | undefined, vaultFolder: unknown = ROOT_FOLDER) 
 		},
 	} as unknown as SyncthingSettingTab;
 	const view = render(SyncthingIgnoreFiles, {
-		props: { parent, vaultFolder: vaultFolder === "loading" ? undefined : vaultFolder },
+		props: {
+			parent,
+			vaultFolder: (vaultFolder === "loading" ? undefined : vaultFolder) as
+				| VaultFolder
+				| Failure
+				| undefined,
+		},
 	});
 	return { files, ...view };
 }
