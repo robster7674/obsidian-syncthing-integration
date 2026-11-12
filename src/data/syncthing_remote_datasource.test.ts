@@ -313,7 +313,7 @@ describe("SyncthingFromREST sync state endpoints", () => {
 
 		await expect(rest.getFolderStatus("my folder")).resolves.toEqual({
 			state: "idle",
-			needFiles: 0,
+			needItems: 0,
 			needBytes: 0,
 			errors: 2,
 			error: "",

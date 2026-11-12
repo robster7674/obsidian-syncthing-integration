@@ -11,7 +11,7 @@ import {
 	SyncStatusMonitor,
 } from "./sync_status";
 
-const IDLE: FolderStatus = { state: "idle", needFiles: 0, needBytes: 0, errors: 0, error: "" };
+const IDLE: FolderStatus = { state: "idle", needItems: 0, needBytes: 0, errors: 0, error: "" };
 const peer = (name: string, completion: number, connected = true, extra: Partial<Peer> = {}): Peer => ({
 	id: name.toUpperCase(),
 	name,
@@ -61,8 +61,8 @@ group("summarise", () => {
 	});
 
 	it.each<[Partial<FolderStatus>, SyncStatus["kind"]]>([
-		[{ state: "syncing", needFiles: 12 }, "syncing"],
-		[{ state: "idle", needFiles: 2 }, "syncing"],
+		[{ state: "syncing", needItems: 12 }, "syncing"],
+		[{ state: "idle", needItems: 2 }, "syncing"],
 		[{ state: "scanning" }, "scanning"],
 		[{ state: "scan-waiting" }, "scanning"],
 		[{ state: "paused" }, "paused"],
@@ -73,7 +73,7 @@ group("summarise", () => {
 	});
 
 	it("writes short texts for the status bar", () => {
-		expect(describe({ kind: "syncing", needFiles: 1, needBytes: 5 }).text).toBe("Syncing 1 file");
+		expect(describe({ kind: "syncing", needItems: 1, needBytes: 5 }).text).toBe("Syncing 1 item");
 		expect(describe({ kind: "waiting", devices: ["phone", "nas"] }).text).toBe(
 			"Waiting for phone, nas",
 		);
@@ -134,15 +134,15 @@ group("SyncStatusMonitor", () => {
 		syncthing.monitor.start();
 
 		await vi.waitFor(() => expect(syncthing.statuses).toEqual([{ kind: "synced" }]));
-		expect(syncthing.longPolls()).toEqual([[7, 60, expect.any(Array)]]);
+		expect(syncthing.longPolls()).toEqual([[7, 30, expect.any(Array)]]);
 
 		syncthing.send({
 			id: 8,
 			type: "FolderSummary",
-			data: { folder: "vault", summary: { state: "syncing", needFiles: 3 } },
+			data: { folder: "vault", summary: { state: "syncing", needFiles: 2, needDeletes: 1 } },
 		});
 		await vi.waitFor(() =>
-			expect(syncthing.statuses.at(-1)).toEqual({ kind: "syncing", needFiles: 3, needBytes: 0 }),
+			expect(syncthing.statuses.at(-1)).toEqual({ kind: "syncing", needItems: 3, needBytes: 0 }),
 		);
 		expect(syncthing.longPolls().at(-1)?.[0]).toBe(8);
 	});
@@ -231,14 +231,67 @@ group("SyncStatusMonitor", () => {
 		);
 	});
 
-	it("says why when the vault has no Syncthing folder", async () => {
+	it("says why when the vault has no Syncthing folder, and finds one added later", async () => {
 		const syncthing = fakeSyncthing();
-		vi.mocked(syncthing.deps.findFolder).mockResolvedValue(new Failure("No folder holds the vault."));
+		vi.mocked(syncthing.deps.findFolder).mockResolvedValueOnce(
+			new Failure("No folder holds the vault."),
+		);
 		syncthing.monitor.start();
-
 		await vi.waitFor(() =>
 			expect(syncthing.statuses).toEqual([{ kind: "unknown", message: "No folder holds the vault." }]),
 		);
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(1));
+
+		syncthing.send({ id: 9, type: "ConfigSaved", data: {} });
+
+		await vi.waitFor(() => expect(syncthing.statuses.at(-1)).toEqual({ kind: "synced" }));
+	});
+
+	it("does not say synced until Syncthing scanned a change made in the vault", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.monitor.start();
+		await vi.waitFor(() => expect(syncthing.statuses).toEqual([{ kind: "synced" }]));
+
+		syncthing.monitor.vaultChanged();
+		expect(syncthing.statuses.at(-1)).toEqual({ kind: "unscanned" });
+
+		syncthing.send(
+			{ id: 9, type: "StateChanged", data: { folder: "vault", from: "idle", to: "scanning" } },
+			{ id: 10, type: "StateChanged", data: { folder: "vault", from: "scanning", to: "idle" } },
+		);
+		await vi.waitFor(() => expect(syncthing.statuses.at(-1)).toEqual({ kind: "synced" }));
+	});
+
+	it("does not count a scan that started before the change", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.monitor.start();
+		await vi.waitFor(() => expect(syncthing.statuses).toHaveLength(1));
+
+		syncthing.monitor.vaultChanged();
+		syncthing.send({
+			id: 9,
+			type: "StateChanged",
+			data: { folder: "vault", from: "scanning", to: "idle" },
+		});
+
+		await vi.waitFor(() => expect(syncthing.statuses.at(-1)).toEqual({ kind: "unscanned" }));
+	});
+
+	it("does not report anything when a long-poll ends without events", async () => {
+		const syncthing = fakeSyncthing();
+		syncthing.monitor.start();
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(1));
+
+		syncthing.send();
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(2));
+
+		expect(syncthing.statuses).toHaveLength(1);
+	});
+
+	it("reads the state once for the command, without following it", async () => {
+		const syncthing = fakeSyncthing();
+
+		await expect(syncthing.monitor.check()).resolves.toEqual({ kind: "synced" });
 		expect(syncthing.longPolls()).toHaveLength(0);
 	});
 

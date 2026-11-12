@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { App, Notice } from "obsidian";
+import { App, Notice, Platform } from "obsidian";
 import type { Notice as MockNotice } from "../test/mocks/obsidian";
 import SyncthingPlugin from "./main";
 import { API_KEY_SECRET, DEVICE_SETTINGS_KEY } from "./settings";
@@ -225,6 +225,10 @@ describe("SyncthingPlugin sync status", () => {
 		plugin.setApiKey("key");
 		expect(start).toHaveBeenCalledTimes(1);
 
+		plugin.device.cliPath = "/usr/bin/syncthing";
+		plugin.saveDeviceSettings();
+		expect(start).toHaveBeenCalledTimes(1);
+
 		plugin.device.folderId = "vault";
 		plugin.saveDeviceSettings();
 		expect(start).toHaveBeenCalledTimes(2);
@@ -242,9 +246,27 @@ describe("SyncthingPlugin sync status", () => {
 		plugin.setApiKey("key");
 
 		plugin.syncStatus = { kind: "waiting", devices: ["phone"] };
-		plugin.showSafeToClose();
+		await plugin.showSafeToClose();
 
 		expect(notices().at(-1)?.message).toContain("phone is still receiving");
+		plugin.onunload();
+	});
+
+	it("does not follow the sync state on mobile, and reads it once when asked", async () => {
+		Platform.isMobileApp = true;
+		const { plugin } = makeDevice({ devMode: false });
+		const start = vi.spyOn(plugin.syncStatusMonitor, "start");
+		const check = vi
+			.spyOn(plugin.syncStatusMonitor, "check")
+			.mockResolvedValue({ kind: "synced" });
+		await plugin.onload();
+		plugin.setApiKey("key");
+
+		await plugin.showSafeToClose();
+
+		expect(start).not.toHaveBeenCalled();
+		expect(check).toHaveBeenCalled();
+		expect(notices().at(-1)?.message).toContain("safe to close");
 		plugin.onunload();
 	});
 });

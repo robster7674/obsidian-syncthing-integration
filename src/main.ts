@@ -63,6 +63,7 @@ export default class SyncthingPlugin extends Plugin {
 	syncStatus?: SyncStatus;
 	private syncStatusEl?: HTMLElement;
 	private following = false;
+	private followedSettings?: string;
 	private onVisibilityChange = () => {
 		if (document.visibilityState === "visible") this.syncStatusMonitor.visible();
 	};
@@ -96,11 +97,18 @@ export default class SyncthingPlugin extends Plugin {
 		if (!Platform.isMobileApp) {
 			this.syncStatusEl = this.addStatusBarItem();
 			this.syncStatusEl.addClass("mod-clickable");
-			this.syncStatusEl.onClickEvent(() => this.showSafeToClose());
+			this.syncStatusEl.onClickEvent(() => void this.showSafeToClose());
 			this.pluginsElements.push(this.syncStatusEl);
 		}
 		document.addEventListener("visibilitychange", this.onVisibilityChange);
-		this.following = true;
+		for (const name of ["create", "modify", "delete", "rename"] as const) {
+			this.registerEvent(
+				// @ts-expect-error The overloads differ only in the callback's arguments.
+				this.app.vault.on(name, () => this.syncStatusMonitor.vaultChanged()),
+			);
+		}
+		// Followed on desktop only: on mobile the command reads it when asked.
+		this.following = !Platform.isMobileApp;
 		this.followSyncStatus();
 
 		// Settings tab
@@ -152,6 +160,7 @@ export default class SyncthingPlugin extends Plugin {
 
 	onunload(): void {
 		this.following = false;
+		this.followedSettings = undefined;
 		this.syncStatusMonitor.stop();
 		document.removeEventListener("visibilitychange", this.onVisibilityChange);
 		this.statusBar?.onunload();
@@ -252,9 +261,20 @@ export default class SyncthingPlugin extends Plugin {
 		this.followSyncStatus();
 	}
 
-	/** (Re)starts following the sync state with the current settings, when an API key is set. */
+	/**
+	 * (Re)starts following the sync state when an API key is set, and only
+	 * when a setting it depends on changed: a long-poll in flight cannot be
+	 * cancelled, so each restart leaves one open for up to 30 s.
+	 */
 	private followSyncStatus() {
 		if (!this.following) return;
+		const followed = JSON.stringify([
+			this.getApiKey(),
+			this.device.baseUrl,
+			this.device.folderId,
+		]);
+		if (followed === this.followedSettings) return;
+		this.followedSettings = followed;
 		this.syncStatusMonitor.stop();
 		this.showSyncStatus(undefined);
 		if (this.getApiKey()) this.syncStatusMonitor.start();
@@ -273,17 +293,20 @@ export default class SyncthingPlugin extends Plugin {
 		this.syncStatusEl.toggleClass("mod-warning", status.kind !== "synced");
 	}
 
-	/** Says whether every device has the vault, so Obsidian can be closed. */
-	showSafeToClose() {
+	/**
+	 * Says whether every device has the vault, so Obsidian can be closed:
+	 * from the followed state on desktop, or read once on mobile.
+	 */
+	async showSafeToClose() {
 		if (!this.getApiKey()) {
 			new Notice("Set the Syncthing API key in the plugin settings to see the sync status.");
 			return;
 		}
-		new Notice(
-			this.syncStatus
-				? describe(this.syncStatus).detail
-				: "The sync status is not known yet. Try again in a moment.",
-		);
+		const status =
+			this.following && this.syncStatus
+				? this.syncStatus
+				: await this.syncStatusMonitor.check();
+		new Notice(describe(status).detail);
 	}
 
 	/** Whether `data.json` still holds the API key or URL that 2.4.0 shared between devices. */
@@ -362,7 +385,7 @@ export default class SyncthingPlugin extends Plugin {
 			{
 				id: "syncthing-safe-to-close",
 				name: "Check whether it is safe to close",
-				callback: () => this.showSafeToClose(),
+				callback: () => void this.showSafeToClose(),
 			},
 			{
 				id: "syncthing-configuration-modal",

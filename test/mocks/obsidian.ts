@@ -89,6 +89,7 @@ export class Vault {
 		return file;
 	});
 	delete = vi.fn(async (_file: TAbstractFile): Promise<void> => undefined);
+	on = vi.fn((_name: string, _callback: (...args: unknown[]) => unknown) => ({}));
 	adapter = { exists: vi.fn(async () => false), rename: vi.fn(async () => undefined) };
 }
 

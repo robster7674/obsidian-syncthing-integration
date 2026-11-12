@@ -25,7 +25,8 @@ export type SyncStatus =
 	| { kind: "error"; message: string }
 	| { kind: "paused" }
 	| { kind: "scanning" }
-	| { kind: "syncing"; needFiles: number; needBytes: number }
+	| { kind: "syncing"; needItems: number; needBytes: number }
+	| { kind: "unscanned" }
 	| { kind: "waiting"; devices: string[] }
 	| { kind: "behind"; devices: string[] }
 	| { kind: "synced" };
@@ -33,11 +34,17 @@ export type SyncStatus =
 /**
  * The vault's sync state, from this device's view of its folder and of the
  * other devices. It is "synced", and safe to close, only when this device
- * has everything and every other device sharing the folder has all of it,
- * as far as this Syncthing knows; paused devices and devices that do not
- * share the folder back are left out.
+ * has everything, Syncthing has scanned every change made in the vault, and
+ * every other device sharing the folder has all of it, as far as this
+ * Syncthing knows; paused devices and devices that do not share the folder
+ * back are left out.
+ * @param unscanned whether the vault changed since Syncthing last finished a scan.
  */
-export function summarise(folder: FolderStatus, peers: Peer[]): SyncStatus {
+export function summarise(
+	folder: FolderStatus,
+	peers: Peer[],
+	unscanned = false
+): SyncStatus {
 	if (folder.state === "error" || folder.error) {
 		return { kind: "error", message: folder.error || "The folder stopped with an error." };
 	}
@@ -49,9 +56,10 @@ export function summarise(folder: FolderStatus, peers: Peer[]): SyncStatus {
 		};
 	}
 	if (folder.state.startsWith("scan")) return { kind: "scanning" };
-	if (folder.state.startsWith("sync") || folder.needFiles > 0) {
-		return { kind: "syncing", needFiles: folder.needFiles, needBytes: folder.needBytes };
+	if (folder.state.startsWith("sync") || folder.needItems > 0) {
+		return { kind: "syncing", needItems: folder.needItems, needBytes: folder.needBytes };
 	}
+	if (unscanned) return { kind: "unscanned" };
 	const counted = peers.filter(
 		(peer) =>
 			!peer.paused &&
@@ -79,8 +87,13 @@ export function describe(status: SyncStatus): { text: string; detail: string } {
 			return { text: "Scanning", detail: "Syncthing is looking for changes in the vault." };
 		case "syncing":
 			return {
-				text: `Syncing ${status.needFiles} ${status.needFiles === 1 ? "file" : "files"}`,
+				text: `Syncing ${status.needItems} ${status.needItems === 1 ? "item" : "items"}`,
 				detail: "This device is receiving changes. Wait before closing.",
+			};
+		case "unscanned":
+			return {
+				text: "Changes not scanned",
+				detail: "The vault changed since Syncthing last looked. Wait for it to scan the changes before closing.",
 			};
 		case "waiting":
 			return {
@@ -90,7 +103,7 @@ export function describe(status: SyncStatus): { text: string; detail: string } {
 		case "behind":
 			return {
 				text: `Not on ${status.devices.join(", ")}`,
-				detail: `${status.devices.join(", ")} ${status.devices.length === 1 ? "is" : "are"} offline and ${status.devices.length === 1 ? "does" : "do"} not have every change yet. If you close now, the changes stay on this device until both are online.`,
+				detail: `${status.devices.join(", ")} ${status.devices.length === 1 ? "is" : "are"} offline and ${status.devices.length === 1 ? "does" : "do"} not have every change yet. If you close now, the changes stay on this device until it is online at the same time as ${status.devices.length === 1 ? "that device" : "each of them"}.`,
 			};
 		case "synced":
 			return {
@@ -110,7 +123,8 @@ const EVENT_TYPES = [
 	"DeviceResumed",
 	"ConfigSaved",
 ] as const;
-const LONG_POLL_SECONDS = 60;
+/** Below the 60 s read timeout of common reverse proxies, such as nginx's default. */
+const LONG_POLL_SECONDS = 30;
 const MAX_RETRY_MS = 60_000;
 
 export interface MonitorDependencies {
@@ -136,6 +150,7 @@ export interface MonitorDependencies {
  * snapshot, then a long-poll of `/rest/events`, so nothing is polled on a
  * timer. While the window is hidden no request is started, and the state is
  * read again when it is shown. After a failure it retries with a growing delay.
+ * {@link check} reads the state once, for platforms that do not follow it.
  */
 export class SyncStatusMonitor {
 	private generation = 0;
@@ -145,6 +160,10 @@ export class SyncStatusMonitor {
 	private status?: FolderStatus;
 	private peers = new Map<string, Peer>();
 	private since = 0;
+	/** The vault changed after the last scan Syncthing started. */
+	private unscanned = false;
+	/** A scan started after the last change, so its end covers that change. */
+	private scanAfterChange = false;
 	private sleep: (ms: number) => Promise<void>;
 
 	constructor(private deps: MonitorDependencies) {
@@ -164,15 +183,30 @@ export class SyncStatusMonitor {
 		this.wake?.();
 	}
 
-	/** Reads the state again, for example after the URL, API key or folder changed. */
-	restart() {
-		this.stop();
-		this.start();
-	}
-
 	/** Called when the window is shown again. */
 	visible() {
 		this.wake?.();
+	}
+
+	/** Called when a file in the vault changed, until Syncthing scans it. */
+	vaultChanged() {
+		this.unscanned = true;
+		this.scanAfterChange = false;
+		this.emit();
+	}
+
+	/** Reads the state once, without following it. */
+	async check(): Promise<SyncStatus> {
+		try {
+			const snapshot = await this.read(() => true);
+			if (snapshot instanceof Failure) return { kind: "unknown", message: snapshot.message };
+			return summarise(snapshot.status, [...snapshot.peers.values()], this.unscanned);
+		} catch (error) {
+			return {
+				kind: "unknown",
+				message: `Syncthing could not be asked: ${(error as Error)?.message ?? error}`,
+			};
+		}
 	}
 
 	private async run(generation: number) {
@@ -187,13 +221,7 @@ export class SyncStatusMonitor {
 			}
 			try {
 				if (snapshotNeeded) {
-					const ready = await this.snapshot(current);
-					if (!current()) return;
-					if (!ready) {
-						// Nothing to follow until a setting changes or the window is shown again.
-						await new Promise<void>((resolve) => (this.wake = resolve));
-						continue;
-					}
+					if (!(await this.snapshot(current))) return;
 					snapshotNeeded = false;
 					retry = 1000;
 				}
@@ -207,7 +235,7 @@ export class SyncStatusMonitor {
 					this.since = Math.max(this.since, event.id);
 					if (this.apply(event) === "reload") snapshotNeeded = true;
 				}
-				if (!snapshotNeeded) this.emit();
+				if (events.length > 0 && !snapshotNeeded) this.emit();
 			} catch (error) {
 				if (!current()) return;
 				this.deps.onChange({
@@ -225,18 +253,37 @@ export class SyncStatusMonitor {
 	}
 
 	/**
-	 * Reads the folder, this device's state and every other device's.
-	 * Subscribes to the events first, so none is missed in between.
-	 * @returns false when there is no folder to follow, or a newer run took over.
+	 * Reads the folder, this device's state and every other device's, and
+	 * shows them. Subscribes to the events first, so none is missed in
+	 * between. Without a folder it shows why and keeps following
+	 * configuration changes, so a folder added later is found.
+	 * @returns false when a newer run took over.
 	 */
 	private async snapshot(current: () => boolean): Promise<boolean> {
 		const latest = await this.deps.rest.getEvents(0, 0, EVENT_TYPES);
-		this.since = latest.reduce((max, event) => Math.max(max, event.id), 0);
-		const found = await this.deps.findFolder();
+		const since = latest.reduce((max, event) => Math.max(max, event.id), 0);
+		const snapshot = await this.read(current);
 		if (!current()) return false;
-		if (found instanceof Failure) {
-			this.deps.onChange({ kind: "unknown", message: found.message });
-			return false;
+		this.since = since;
+		if (snapshot instanceof Failure) {
+			this.folder = undefined;
+			this.status = undefined;
+			this.peers = new Map();
+			this.deps.onChange({ kind: "unknown", message: snapshot.message });
+			return true;
+		}
+		({ folder: this.folder, status: this.status, peers: this.peers } = snapshot);
+		this.emit();
+		return true;
+	}
+
+	private async read(current: () => boolean): Promise<
+		| { folder: SyncthingFolder; status: FolderStatus; peers: Map<string, Peer> }
+		| Failure
+	> {
+		const found = await this.deps.findFolder();
+		if (found instanceof Failure || !current()) {
+			return found instanceof Failure ? found : new Failure("Superseded.");
 		}
 		const folder = found.folder;
 		const [status, devices, myID, connected] = await Promise.all([
@@ -261,12 +308,7 @@ export class SyncStatusMonitor {
 				peer.completion = await this.deps.rest.getCompletion(folder.id, peer.id);
 			})
 		);
-		if (!current()) return false;
-		this.folder = folder;
-		this.status = status;
-		this.peers = peers;
-		this.emit();
-		return true;
+		return { folder, status, peers };
 	}
 
 	/** Updates the state from one event, or asks for a new snapshot. */
@@ -285,6 +327,11 @@ export class SyncStatusMonitor {
 			case "StateChanged":
 				if (ours && this.status && typeof data.to === "string") {
 					this.status = { ...this.status, state: data.to };
+				}
+				if (ours && data.to === "scanning" && this.unscanned) this.scanAfterChange = true;
+				if (ours && data.from === "scanning" && this.scanAfterChange) {
+					this.unscanned = false;
+					this.scanAfterChange = false;
 				}
 				return;
 			case "FolderCompletion": {
@@ -309,6 +356,8 @@ export class SyncStatusMonitor {
 	}
 
 	private emit() {
-		if (this.status) this.deps.onChange(summarise(this.status, [...this.peers.values()]));
+		if (this.status) {
+			this.deps.onChange(summarise(this.status, [...this.peers.values()], this.unscanned));
+		}
 	}
 }

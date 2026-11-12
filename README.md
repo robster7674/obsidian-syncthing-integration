@@ -90,7 +90,7 @@ The plugin talks to Syncthing's REST API at the Syncthing URL, `http://127.0.0.1
 
 ### Sync status
 
-With an API key set, the status bar shows the vault's sync state on desktop: Synced, Syncing *n* files, Waiting for *device*, Not on *device* (an offline device that lacks changes), Scanning, Sync paused or Sync error. "Synced" means every device sharing the vault's folder has all of it, as far as this device's Syncthing knows, so it is safe to close Obsidian. Click it, or run "Check whether it is safe to close", to see why. The plugin follows Syncthing's event stream instead of polling, and starts no request while Obsidian's window is hidden. Paused devices, and devices that do not share the folder back, are not counted.
+With an API key set, the status bar shows the vault's sync state on desktop: Synced, Syncing *n* items, Changes not scanned, Waiting for *device*, Not on *device* (an offline device that lacks changes), Scanning, Sync paused or Sync error. "Synced" means every device sharing the vault's folder has all of it, as far as this device's Syncthing knows, so it is safe to close Obsidian. Click it, or run "Check whether it is safe to close", to see why. The plugin follows Syncthing's event stream instead of polling, and starts no request while Obsidian's window is hidden. Paused devices, and devices that do not share the folder back, are not counted. After you change a file, the status says "Changes not scanned" until Syncthing has scanned the folder again, which its file watcher does about 10 seconds later by default. The status is followed on desktop; on mobile, the command reads it when you run it.
 
 ### Vault folder and ignored files
 

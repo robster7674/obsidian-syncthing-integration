@@ -7,7 +7,8 @@ import { isRecord } from "src/controllers/utils";
 export interface FolderStatus {
 	/** Such as `idle`, `scanning`, `syncing`, `error` or `paused`. */
 	state: string;
-	needFiles: number;
+	/** Files, directories, symlinks and deletions this device still needs. */
+	needItems: number;
 	needBytes: number;
 	/** Items that failed to sync. */
 	errors: number;
@@ -33,7 +34,12 @@ export function parseFolderStatus(value: unknown): FolderStatus | undefined {
 	if (!isRecord(value) || typeof value.state !== "string") return undefined;
 	return {
 		state: value.state,
-		needFiles: count(value.needFiles),
+		needItems:
+			count(value.needTotalItems) ||
+			count(value.needFiles) +
+				count(value.needDirectories) +
+				count(value.needSymlinks) +
+				count(value.needDeletes),
 		needBytes: count(value.needBytes),
 		errors: count(value.errors) || count(value.pullErrors),
 		error: typeof value.error === "string" ? value.error : "",
