@@ -13,7 +13,7 @@ import {
 describe("parseSettings", () => {
 	it("gives the defaults when nothing was saved", () => {
 		expect(parseSettings(null, null)).toEqual({
-			settings: { devMode: false },
+			settings: { devMode: false, hiddenConflicts: false },
 			device: { baseUrl: DEFAULT_BASE_URL, cliPath: "", folderId: "" },
 			takeOver: false,
 			sharedApiKey: undefined,
@@ -29,7 +29,7 @@ describe("parseSettings", () => {
 			{ baseUrl: "https://example.org/syncthing", cliPath: "/opt/syncthing" },
 		);
 
-		expect(loaded.settings).toEqual({ devMode: true });
+		expect(loaded.settings).toEqual({ devMode: true, hiddenConflicts: false });
 		expect(loaded.device).toEqual({
 			baseUrl: "https://example.org/syncthing",
 			cliPath: "/opt/syncthing",
@@ -53,7 +53,7 @@ describe("parseSettings", () => {
 		);
 
 		expect(loaded).toMatchObject({
-			settings: { devMode: false },
+			settings: { devMode: false, hiddenConflicts: false },
 			device: { baseUrl: "https://192.168.1.5:8443" },
 			takeOver: true,
 			sharedApiKey: "key",

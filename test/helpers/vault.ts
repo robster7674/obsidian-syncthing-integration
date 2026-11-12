@@ -20,6 +20,8 @@ export interface MemoryVault {
 	trashed: TrashedFile[];
 	/** Files written through the adapter, outside the vault index. */
 	hidden: Map<string, Uint8Array>;
+	/** Modification times of `hidden` files. */
+	mtimes: Map<string, number>;
 	file(path: string): TFile;
 	content(path: string): string | undefined;
 	bytes(path: string): Uint8Array | undefined;
@@ -41,6 +43,8 @@ export function makeMemoryVault(
 	const files = new Map<string, { file: TFile; bytes: Uint8Array }>();
 	const trashed: TrashedFile[] = [];
 	const hidden = new Map<string, Uint8Array>();
+	/** Modification times of hidden files, 0 unless a test sets one. */
+	const mtimes = new Map<string, number>();
 	const trash = (path: string, bytes: Uint8Array) =>
 		trashed.push({ path, content: decode(bytes), bytes });
 	const takeHidden = (path: string) => {
@@ -96,6 +100,7 @@ export function makeMemoryVault(
 		adapter: {
 			writeBinary: vi.fn(async (path: string, data: ArrayBuffer) => {
 				hidden.set(path, copy(data));
+				mtimes.set(path, (mtimes.get(path) ?? 0) + 1);
 			}),
 			trashSystem: vi.fn(async (path: string) => {
 				trash(path, takeHidden(path));
@@ -108,6 +113,17 @@ export function makeMemoryVault(
 				takeHidden(path);
 			}),
 			exists: vi.fn(async (path: string) => files.has(path) || hidden.has(path)),
+			readBinary: vi.fn(async (path: string) => {
+				const bytes = hidden.get(path);
+				if (bytes === undefined) throw new Error(`${path} does not exist`);
+				return buffer(bytes);
+			}),
+			stat: vi.fn(async (path: string) => {
+				const bytes = hidden.get(path);
+				return bytes === undefined
+					? null
+					: { type: "file", ctime: 0, mtime: mtimes.get(path) ?? 0, size: bytes.byteLength };
+			}),
 		},
 	};
 	const fileManager = {
@@ -130,6 +146,7 @@ export function makeMemoryVault(
 		app: { vault, fileManager } as unknown as App,
 		trashed,
 		hidden,
+		mtimes,
 		file: (path) => {
 			const found = files.get(path);
 			if (!found) throw new Error(`${path} does not exist`);
