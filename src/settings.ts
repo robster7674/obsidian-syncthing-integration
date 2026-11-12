@@ -16,8 +16,8 @@ export interface SyncthingPluginSettings {
  * Versions up to 2.4.0 saved the address as `configuration.url` and kept GUI
  * credentials, which are no longer used.
  * @returns the settings, and whether `data` holds fields that saving drops.
- * An unusable saved address is replaced by the default in memory only, so the
- * saved value stays on disk until the user sets another one.
+ * A saved address that cannot be used is kept as it was, so nothing the user
+ * typed is lost, and `problem` says why; requests refuse it until it is fixed.
  */
 export function parseSettings(data: unknown): {
 	settings: SyncthingPluginSettings;
@@ -31,17 +31,18 @@ export function parseSettings(data: unknown): {
 		baseUrl: DEFAULT_BASE_URL,
 		devMode: saved.devMode === true,
 	};
-	let problem: string | undefined;
-	const baseUrl =
+	const { typed, parsed } =
 		typeof saved.baseUrl === "string"
-			? parseBaseUrl(saved.baseUrl)
+			? { typed: saved.baseUrl, parsed: parseBaseUrl(saved.baseUrl) }
 			: isRecord(saved.configuration) && isRecord(saved.configuration.url)
 				? legacyBaseUrl(saved.configuration.url)
-				: DEFAULT_BASE_URL;
-	if (baseUrl instanceof Failure) {
-		problem = `The saved Syncthing URL could not be used, so ${DEFAULT_BASE_URL} is used instead. ${baseUrl.message}`;
+				: { typed: DEFAULT_BASE_URL, parsed: DEFAULT_BASE_URL };
+	let problem: string | undefined;
+	if (parsed instanceof Failure) {
+		settings.baseUrl = typed;
+		problem = `The saved Syncthing URL cannot be used. ${parsed.message} Set it again in the plugin settings.`;
 	} else {
-		settings.baseUrl = baseUrl;
+		settings.baseUrl = parsed;
 	}
 	const legacy = ["configuration", "gui_username", "gui_password"].some(
 		(key) => key in saved,
@@ -90,7 +91,8 @@ function isLoopback(hostname: string): boolean {
 	return (
 		/^localhost\.?$/i.test(hostname) ||
 		/^127(\.\d{1,3}){3}$/.test(hostname) ||
-		hostname === "[::1]"
+		hostname === "[::1]" ||
+		/^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(hostname)
 	);
 }
 
@@ -99,17 +101,30 @@ function isLoopback(hostname: string): boolean {
  * port or a path. Its untouched default, `http://localhost:8384`, becomes
  * Syncthing's default address {@link DEFAULT_BASE_URL}.
  */
-function legacyBaseUrl(saved: Record<string, unknown>): string | Failure {
+function legacyBaseUrl(saved: Record<string, unknown>): {
+	typed: string;
+	parsed: string | Failure;
+} {
 	const protocol = saved.protocol === "https" ? "https" : "http";
 	const host = typeof saved.ip_address === "string" ? saved.ip_address.trim() : "";
+	const port = typeof saved.port === "number" ? String(saved.port) : "";
 	const ipv6 = (host.match(/:/g) ?? []).length > 1 && !host.startsWith("[");
+	const authority = (ipv6 ? `[${host}]` : host).split("/")[0];
+	const hasPort = /(^[^:]*|\]):\d+$/.test(authority);
+	const text = `${protocol}://${ipv6 ? `[${host}]` : host}`;
 	let url: URL;
 	try {
-		url = new URL(`${protocol}://${ipv6 ? `[${host}]` : host}`);
+		url = new URL(text);
 	} catch {
-		return new Failure(`"${host}" is not a host name or address.`);
+		return {
+			typed: port ? `${text}:${port}` : text,
+			parsed: new Failure(`"${host}" is not a host name or address.`),
+		};
 	}
-	if (!url.port && typeof saved.port === "number") url.port = String(saved.port);
+	if (!hasPort && port) url.port = port;
 	const typed = (url.origin + url.pathname).replace(/\/+$/, "");
-	return parseBaseUrl(typed === "http://localhost:8384" ? DEFAULT_BASE_URL : typed);
+	return {
+		typed,
+		parsed: parseBaseUrl(typed === "http://localhost:8384" ? DEFAULT_BASE_URL : typed),
+	};
 }

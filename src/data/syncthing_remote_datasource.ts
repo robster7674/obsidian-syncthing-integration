@@ -1,5 +1,7 @@
 import { Platform, requestUrl, type RequestUrlResponse } from "obsidian";
 import { isRecord } from "src/controllers/utils";
+import { Failure } from "src/models/failures";
+import { parseBaseUrl } from "src/settings";
 import type SyncthingPlugin from "src/main";
 import { type SyncthingDevice } from "src/models/entities";
 import { RestFailure } from "src/models/failures";
@@ -80,11 +82,13 @@ export class SyncthingFromREST {
 	 * @throws {RestFailure} with a message saying what to check.
 	 */
 	private async requestEndpoint(endpoint: string): Promise<unknown> {
-		const url = endpointUrl(
-			this.plugin.settings.baseUrl,
-			endpoint,
-			Platform.isMobileApp
-		);
+		const baseUrl = parseBaseUrl(this.plugin.settings.baseUrl);
+		if (baseUrl instanceof Failure) {
+			throw new RestFailure(
+				`The Syncthing URL cannot be used. ${baseUrl.message}`
+			);
+		}
+		const url = endpointUrl(baseUrl, endpoint, Platform.isMobileApp);
 		let response: RequestUrlResponse;
 		try {
 			response = await requestUrl({
@@ -95,7 +99,7 @@ export class SyncthingFromREST {
 			});
 		} catch (error) {
 			throw new RestFailure(
-				`Could not reach Syncthing at ${this.plugin.settings.baseUrl}: ${
+				`Could not reach Syncthing at ${baseUrl}: ${
 					error instanceof Error ? error.message : String(error)
 				}`
 			);

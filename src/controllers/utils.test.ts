@@ -262,6 +262,13 @@ describe("logErrorIfNotValidJson", () => {
 		expect(spy.mock.calls[0][0]).toContain("name");
 		spy.mockRestore();
 	});
+
+	it("does not log the JSON, which may hold paths or device IDs", () => {
+		const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+		logErrorIfNotValidJson({ path: "/home/me/vault" }, "id", "string");
+		expect(spy.mock.calls[0][0]).not.toContain("/home/me/vault");
+		spy.mockRestore();
+	});
 });
 
 describe("sortByConflictDate", () => {

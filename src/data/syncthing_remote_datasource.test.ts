@@ -126,6 +126,15 @@ describe("SyncthingFromREST.ping", () => {
 		});
 	});
 
+	it("refuses an unusable Syncthing URL without sending anything", async () => {
+		plugin.settings.baseUrl = "http://user:pw@host:8384";
+
+		await expect(rest.ping()).rejects.toMatchObject({
+			message: expect.stringContaining("cannot be used"),
+		});
+		expect(mockRequestUrl).not.toHaveBeenCalled();
+	});
+
 	it("logs neither the API key nor the response", async () => {
 		const log = vi.spyOn(console, "log");
 		const error = vi.spyOn(console, "error");

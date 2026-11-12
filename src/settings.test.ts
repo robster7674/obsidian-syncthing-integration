@@ -84,20 +84,33 @@ describe("parseSettings", () => {
 				.settings.baseUrl;
 
 		expect(parse("192.168.1.5:8443")).toBe("https://192.168.1.5:8443");
+		expect(parse("sync.example.org:443")).toBe("https://sync.example.org");
+		expect(parse("[fd00::5]:8443")).toBe("https://[fd00::5]:8443");
+		expect(parse("fd00::5")).toBe("https://[fd00::5]:8384");
 		expect(parse("sync.example.org/syncthing")).toBe(
 			"https://sync.example.org:8384/syncthing",
 		);
 	});
 
-	it("replaces an unusable saved address in memory only, and says so", () => {
+	it("keeps an unusable saved address as it was, and says why", () => {
 		const { settings, legacy, problem } = parseSettings({
 			baseUrl: "http://user:pw@host:8384",
 		});
 
-		expect(settings.baseUrl).toBe(DEFAULT_BASE_URL);
+		expect(settings.baseUrl).toBe("http://user:pw@host:8384");
 		expect(legacy).toBe(false);
 		expect(problem).toContain("Remove the user name and password");
 		expect(problem).not.toContain("pw");
+	});
+
+	it("keeps an unusable 2.4.0 address in the new format when rewriting", () => {
+		const { settings, legacy, problem } = parseSettings({
+			configuration: { url: { protocol: "http", ip_address: "my nas", port: 8384 } },
+		});
+
+		expect(settings.baseUrl).toBe("http://my nas:8384");
+		expect(legacy).toBe(true);
+		expect(problem).toContain("is not a host name");
 	});
 });
 
@@ -133,6 +146,7 @@ describe("sendsKeyInClear", () => {
 		["http://[::1]:8384", false],
 		["http://127.0.0.2:8384", false],
 		["http://localhost.:8384", false],
+		["http://[::ffff:127.0.0.1]:8384", false],
 		["https://example.org/syncthing", false],
 		["http://192.168.1.5:8384", true],
 	])("%s: %s", (url, expected) => {

@@ -18,7 +18,7 @@ export class SyncthingFolderModel extends SyncthingFolder {
 		logErrorIfNotValidJson(parsedJSON, "path", "string");
 		logErrorIfNotValidJson(parsedJSON, "filesystemType", "string");
 		logErrorIfNotValidJson(parsedJSON, "type", "string");
-		logErrorIfNotValidJson(parsedJSON, "maxConflicts", 0);
+		logErrorIfNotValidJson(parsedJSON, "maxConflicts", "number");
 		if (!("devices" in parsedJSON && Array.isArray(parsedJSON["devices"])))
 			throw new Error(
 				"Error validating JSON: devices is not present or is not an array"
@@ -53,7 +53,7 @@ export class SyncthingDeviceModel extends SyncthingDevice {
 			throw new Error("JSON is not an object or is null");
 		logErrorIfNotValidJson(parsedJSON, "deviceID", "string");
 		logErrorIfNotValidJson(parsedJSON, "introducedBy", "string");
-		logErrorIfNotValidJson(parsedJSON, "paused", true);
+		logErrorIfNotValidJson(parsedJSON, "paused", "boolean");
 		if (
 			!(
 				"addresses" in parsedJSON &&

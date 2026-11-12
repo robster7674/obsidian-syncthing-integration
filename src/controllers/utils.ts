@@ -275,11 +275,17 @@ export function isNumberArray(value: unknown): value is number[] {
  * ```
  *
  */
-export function validateJsonField<T extends string, K>(
+interface JsonTypes {
+	string: string;
+	number: number;
+	boolean: boolean;
+}
+
+export function validateJsonField<T extends string, K extends keyof JsonTypes>(
 	json: unknown,
 	field: T,
 	type: K
-): json is object & Record<T, K> {
+): json is object & Record<T, JsonTypes[K]> {
 	return (
 		typeof json === "object" &&
 		json !== null &&
@@ -288,16 +294,18 @@ export function validateJsonField<T extends string, K>(
 	);
 }
 
-export function logErrorIfNotValidJson<T extends string, K>(
+/**
+ * Logs which field is invalid, but not the JSON itself, which may hold
+ * device IDs, paths or addresses.
+ */
+export function logErrorIfNotValidJson<T extends string, K extends keyof JsonTypes>(
 	json: unknown,
 	field: T,
 	type: K
-): asserts json is object & Record<T, K> {
+): asserts json is object & Record<T, JsonTypes[K]> {
 	if (!validateJsonField(json, field, type)) {
 		console.error(
-			`Error validating JSON: ${field} is not present or is not of type ${typeof type}. Got ${JSON.stringify(
-				json
-			)}.`
+			`Error validating JSON: ${field} is not present or is not of type ${type}.`
 		);
 	}
 }

@@ -14,7 +14,8 @@
 	let hasSyncthing = true;
 	let apiInputType = "password";
 	let baseUrl = parent.plugin.settings.baseUrl;
-	let baseUrlError = "";
+	const savedUrl = parseBaseUrl(baseUrl);
+	let baseUrlError = savedUrl instanceof Failure ? savedUrl.message : "";
 
 	onMount(async () => {
 		hasSyncthing = await parent.syncthingController.hasSyncthing();
@@ -216,8 +217,13 @@
 		slot="control"
 		class="mod-cta"
 		on:click={() => {
+			const url = parseBaseUrl(parent.plugin.settings.baseUrl);
+			if (url instanceof Failure) {
+				new Notice(url.message);
+				return;
+			}
 			// eslint-disable-next-line no-undef
-			open(parent.plugin.settings.baseUrl);
+			open(url);
 		}}
 	>
 		<ObsidianLucideIcon name="link" />
