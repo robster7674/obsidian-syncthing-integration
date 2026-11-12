@@ -4,7 +4,9 @@
 	import { EditorView, basicSetup } from "codemirror";
 	import { Notice, type TFile } from "obsidian";
 	import { ConflictResolver } from "src/controllers/conflict_resolution";
+	import { comparableAsText } from "src/controllers/file_kind";
 	import { markdownPreview } from "src/controllers/markdown_preview";
+	import { Failure } from "src/models/failures";
 	import { type DiffModal } from "src/views/diff_modal";
 	import { MergeModal } from "src/views/merge_editor";
 	import { onMount } from "svelte";
@@ -35,6 +37,11 @@
 
 	/** The original's text as the diff shows it, so a change made since is not overwritten. */
 	let shownOriginal: string | undefined;
+	/**
+	 * `true` when the pair is shown as a text diff, why it is compared by its
+	 * details only, or `undefined` until that is known.
+	 */
+	let asText: true | string | undefined;
 
 	async function diffState(
 		conflict: TFile
@@ -66,10 +73,25 @@
 		currentConflict = file;
 		revision++;
 		loading = true;
+		asText = undefined;
 		const request = ++diffRequest;
 		try {
+			const comparable = await comparableAsText(
+				parentModal.app,
+				file,
+				parentModal.originalFile
+			);
+			if (request !== diffRequest) return;
+			if (comparable !== true) {
+				asText = comparable;
+				shownOriginal = undefined;
+				editor?.setState(EditorState.create({ doc: "" }));
+				loading = false;
+				return;
+			}
 			const { state, originalContent } = await diffState(file);
 			if (request !== diffRequest) return;
+			asText = true;
 			shownOriginal = originalContent;
 			editor?.setState(state);
 			loading = false;
@@ -134,6 +156,19 @@
 		});
 	}
 
+	async function keepBoth() {
+		const conflict = currentConflict;
+		const properties = parentModal.conflictingFilesProperties.get(conflict);
+		if (!properties || properties instanceof Failure) {
+			new Notice(`${conflict.name} is not named like a Syncthing conflict.`);
+			return;
+		}
+		await resolve(conflict, async () => {
+			const path = await resolver.keepBoth(conflict, properties);
+			return `Kept both versions. The conflicting one is now ${path}.`;
+		});
+	}
+
 	function openMergeEditor() {
 		if (busy || loading) return;
 		const conflict = currentConflict;
@@ -170,7 +205,14 @@
 </div>
 <div class="column">
 	<h1>Quick difference view</h1>
-	<div bind:this={unifiedMergeViewContainer} class="diff_view"></div>
+	{#if typeof asText === "string"}
+		<p class="mod-warning">{asText}</p>
+	{/if}
+	<div
+		bind:this={unifiedMergeViewContainer}
+		class="diff_view"
+		class:hidden={typeof asText === "string"}
+	></div>
 </div>
 <div class="column">
 	<h1>Original file</h1>
@@ -178,8 +220,9 @@
 	{#key revision}
 		<FileDetails file={parentModal.originalFile} />
 	{/key}
-	<div class="preview-container">
+	<div class="preview-container" class:hidden={asText !== true}>
 		{#key revision}
+			{#if asText === true}
 			<h2>Original file preview</h2>
 			{#await parentModal.app.vault.cachedRead(parentModal.originalFile)}
 				<p>Loading preview...</p>
@@ -196,6 +239,7 @@
 			{:catch error}
 				<p>Could not read the file: {error}</p>
 			{/await}
+			{/if}
 		{/key}
 	</div>
 </div>
@@ -204,9 +248,12 @@
 		Accept conflict changes
 	</button>
 	<button disabled={busy || loading} on:click={acceptOriginal}> Accept original </button>
-	<button disabled={busy || loading} on:click={openMergeEditor}>
-		Open in Merge Editor
-	</button>
+	<button disabled={busy || loading} on:click={keepBoth}>Keep both</button>
+	{#if asText === true}
+		<button disabled={busy || loading} on:click={openMergeEditor}>
+			Open in Merge Editor
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -248,6 +295,9 @@
 		padding: 1%;
 		overflow-y: scroll;
 		height: 500px;
+	}
+	.hidden {
+		display: none;
 	}
 	.diff_view {
 		max-height: 650px;

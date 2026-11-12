@@ -1,4 +1,5 @@
 import { type App, normalizePath, type TFile } from "obsidian";
+import { type ConflictFilename } from "src/models/entities";
 
 /**
  * Resolves Syncthing conflicts. Every action moves the content it replaces
@@ -61,16 +62,39 @@ export class ConflictResolver {
 	 * Refuses when anything is at that path, including a file outside the vault index or one differing only in case.
 	 */
 	async restoreAsOriginal(conflict: TFile, originalPath: string): Promise<void> {
-		const folded = originalPath.toLowerCase();
+		await this.renameToFreePath(conflict, originalPath);
+	}
+
+	/**
+	 * Keeps both versions: the conflict is renamed next to the original, so
+	 * Syncthing no longer sees it as a conflict, such as
+	 * `Note (conflict from ABCDEFG, 2022-01-01 120000).md`.
+	 * @returns the conflict's new path.
+	 */
+	async keepBoth(conflict: TFile, properties: ConflictFilename): Promise<string> {
+		const folder = conflict.path.slice(0, conflict.path.length - conflict.name.length);
+		const extension = properties.extension ? `.${properties.extension}` : "";
+		const date = `${properties.date.slice(0, 4)}-${properties.date.slice(4, 6)}-${properties.date.slice(6)} ${properties.time}`;
+		const from = properties.modifiedBy ? `from ${properties.modifiedBy}, ` : "";
+		const path = normalizePath(
+			`${folder}${properties.filename} (conflict ${from}${date})${extension}`
+		);
+		await this.renameToFreePath(conflict, path);
+		return path;
+	}
+
+	/** Renames `file` to `path`, refusing when anything is there, also differing only in case or outside the vault index. */
+	private async renameToFreePath(file: TFile, path: string): Promise<void> {
+		const folded = path.toLowerCase();
 		const taken =
 			this.app.vault
 				.getFiles()
-				.some((file) => file.path.toLowerCase() === folded) ||
-			(await this.app.vault.adapter.exists(originalPath));
+				.some((other) => other.path.toLowerCase() === folded) ||
+			(await this.app.vault.adapter.exists(path));
 		if (taken) {
-			throw new Error(`${originalPath} already exists.`);
+			throw new Error(`${path} already exists.`);
 		}
-		await this.app.fileManager.renameFile(conflict, originalPath);
+		await this.app.fileManager.renameFile(file, path);
 	}
 
 	/**
