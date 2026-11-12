@@ -1,33 +1,4 @@
 /**
- * Syncthing configuration object.
- *
- * This is a minimalist version of the actual configuration object retrieved from the API.
- * It should be reflecting the json response from the `/rest/config/` endpoint.
- * @see https://docs.syncthing.net/users/config.html#config-file-format
- */
-export class SyncthingConfiguration {
-	constructor(
-		/**
-		 * The configuration's version
-		 * @see https://docs.syncthing.net/users/config.html#config-option-configuration.version
-		 */
-		public version: string,
-		public folders: SyncthingFolder[],
-		public devices: SyncthingDevice[],
-		public url: SyncthingURL
-	) {}
-}
-
-/**
- * Simple URL object.
- */
-export type SyncthingURL = {
-	protocol: "https" | "http";
-	ip_address: string | "localhost";
-	port: number;
-};
-
-/**
  * Available sync types in Syncthing.
  * @see https://docs.syncthing.net/users/config.html#config-option-folder.type
  */
