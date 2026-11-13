@@ -6,8 +6,9 @@ import type { ConflictsModal } from "src/views/conflicts_modal";
 import { makeConflictFile, makeFile } from "../../test/helpers/files";
 import ConflictsList from "./conflicts_list.svelte";
 
+let log: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
-	vi.spyOn(console, "log").mockImplementation(() => {});
+	log = vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -39,6 +40,8 @@ describe("conflicts_list.svelte", () => {
 		expect(container.querySelector(".callout")?.textContent).toContain(
 			"c/odd.sync-conflict-x.md",
 		);
+		// The vault's file names stay out of the console.
+		expect(log).not.toHaveBeenCalled();
 	});
 
 	it("shows no warning when every name is recognised", () => {

@@ -32,7 +32,6 @@ export class PluginDevModeController {
 					units: "paragraphs",
 				})}`
 			);
-			console.log("In the generateSyncthingConflicts function.");
 
 			// Create conflict files corresponding to main file.
 			new Notice("Creating conflict files...");
@@ -53,7 +52,6 @@ export class PluginDevModeController {
 					{ length: 7 },
 					() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]
 				).join("");
-				console.log(dateString);
 				await this.plugin.app.vault.create(
 					`${mainFile.basename}.sync-conflict-${dateString}-${deviceID}.md`,
 					`# ${loremIpsum({
