@@ -343,7 +343,8 @@ export class SyncStatusMonitor {
 	/** Updates the state from one event, or asks for a new snapshot. */
 	private apply(event: SyncthingEvent): "reload" | undefined {
 		const data = event.data;
-		const ours = data.folder === this.folder?.id;
+		// A paused folder's state only changes with its configuration.
+		const ours = data.folder === this.folder?.id && !this.folder?.paused;
 		const peer = (id: unknown) => (typeof id === "string" ? this.peers.get(id) : undefined);
 		switch (event.type) {
 			case "ConfigSaved":
