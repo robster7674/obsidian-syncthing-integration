@@ -6,9 +6,11 @@ import type { ConflictsModal } from "src/views/conflicts_modal";
 import { makeConflictFile, makeFile } from "../../test/helpers/files";
 import ConflictsList from "./conflicts_list.svelte";
 
-let log: ReturnType<typeof vi.spyOn>;
+const LEVELS = ["log", "debug", "info", "warn"] as const;
+let logged: () => unknown[][];
 beforeEach(() => {
-	log = vi.spyOn(console, "log").mockImplementation(() => {});
+	const spies = LEVELS.map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
+	logged = () => spies.flatMap((spy) => spy.mock.calls);
 });
 
 afterEach(() => {
@@ -40,8 +42,7 @@ describe("conflicts_list.svelte", () => {
 		expect(container.querySelector(".callout")?.textContent).toContain(
 			"c/odd.sync-conflict-x.md",
 		);
-		// The vault's file names stay out of the console.
-		expect(log).not.toHaveBeenCalled();
+		expect(logged()).toEqual([]);
 	});
 
 	it("shows no warning when every name is recognised", () => {
@@ -51,5 +52,6 @@ describe("conflicts_list.svelte", () => {
 
 		expect(container.textContent).toContain("No conflicts found.");
 		expect(container.querySelector(".callout")).toBeNull();
+		expect(logged()).toEqual([]);
 	});
 });
