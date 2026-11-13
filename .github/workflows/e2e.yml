@@ -18,6 +18,7 @@ env:
 
 jobs:
   e2e:
+    name: e2e (${{ matrix.os }})
     # Release PRs only bump version files.
     if: "${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/') }}"
     strategy:
@@ -81,6 +82,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update
           sudo apt-get install -y xvfb
       - name: Run the test plan
         shell: bash

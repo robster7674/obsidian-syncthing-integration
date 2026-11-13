@@ -48,7 +48,11 @@ export class ReverseProxy {
 					answer.pipe(res);
 				},
 			);
-			upstream.on("error", () => res.writeHead(502).end());
+			upstream.on("error", () => {
+				if (!res.headersSent) res.writeHead(502);
+				res.end();
+			});
+			res.on("close", () => upstream.destroy());
 			req.pipe(upstream);
 		});
 		return new Promise((resolve) => this.server!.listen(this.port, "127.0.0.1", resolve));

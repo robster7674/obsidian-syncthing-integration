@@ -195,13 +195,14 @@ describe("Sync status and safe-to-close", function () {
 		await browser.waitUntil(async () => (await takeNotices()).some((n) => n.length > 10), { timeout: 10_000 });
 	});
 
-	it("L2: each restart leaves at most one long-poll, ending within 30 s", async function () {
+	it("L2: each restart leaves at most one extra long-poll, ending within 30 s", async function () {
 		const proxy = new ReverseProxy(vault.a.url, 18395);
 		await proxy.start();
 		try {
 			await connectPlugin(vault, { url: proxy.url });
 			await waitForKind("synced");
-			for (const key of ["wrong-1", "wrong-2", vault.a.info.apiKey]) {
+			const keys = ["wrong-1", "wrong-2", vault.a.info.apiKey];
+			for (const key of keys) {
 				await connectPlugin(vault, { url: proxy.url, apiKey: key });
 				await sleep(1500);
 			}
@@ -211,9 +212,9 @@ describe("Sync status and safe-to-close", function () {
 			const t = Date.now();
 			await browser.executeObsidian(async ({ plugins }) => plugins.syncthingIntegration.syncthingFromREST.getMyID());
 			const latency = Date.now() - t;
-			await waitFor("the extra long-polls to end", () => events().length <= 1, 45_000);
-			note(`${peak} long-polls open after 3 restarts; extra ones gone after ${Math.round((Date.now() - start) / 1000)} s; another request meanwhile took ${latency} ms`);
-			expect(peak).toBeLessThanOrEqual(4);
+			await waitFor("the extra long-polls to end", () => events().length <= 1, 35_000);
+			note(`${peak} long-polls open after ${keys.length} restarts; extra ones gone after ${Math.round((Date.now() - start) / 1000)} s; another request meanwhile took ${latency} ms`);
+			expect(peak).toBeLessThanOrEqual(keys.length + 1);
 		} finally {
 			await connectPlugin(vault);
 			await proxy.stop();

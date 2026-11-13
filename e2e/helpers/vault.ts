@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { browser } from "@wdio/globals";
 import { obsidianPage } from "wdio-obsidian-service";
-import { Syncthing, waitFor, type InstanceInfo } from "./syncthing.ts";
+import { sleep, Syncthing, waitFor, type InstanceInfo } from "./syncthing.ts";
 
 export const PLUGIN_ID = "syncthing-integration";
 
@@ -80,8 +80,9 @@ export async function connectPlugin(
 			const plugin = plugins.syncthingIntegration;
 			plugin.device.baseUrl = url;
 			plugin.device.folderId = folderId;
-			plugin.saveDeviceSettings();
+			// Restarts the sync status once, with both changes; saving then changes nothing it follows.
 			plugin.setApiKey(apiKey);
+			plugin.saveDeviceSettings();
 		},
 		url,
 		apiKey,
@@ -127,7 +128,7 @@ export async function makeConflict(
 	write(vault.peerPath, file, onB);
 	await b.scan(folderId);
 	// The later change wins, so the conflict copy holds Device B's version.
-	await new Promise((resolve) => setTimeout(resolve, 1100));
+	await sleep(1100);
 	write(vault.vaultPath, file, onA);
 	await a.scan(folderId);
 	await a.setDevicePaused(idB, false);
@@ -144,7 +145,6 @@ export async function makeConflict(
 	}
 	await a.waitInSync(folderId, idB, 90_000);
 	await b.waitInSync(folderId, idA, 90_000);
-	void idA;
 	return conflictPath;
 }
 
@@ -208,31 +208,31 @@ export async function clickButton(text: string, scope = ".modal-container .modal
 	});
 }
 
-/** Opens the diff of `original` the way a user does: open the note, run "Open diff modal". */
-export async function openDiff(original: string) {
-	await obsidianPage.openFile(original);
-	await browser.executeObsidianCommand(`${PLUGIN_ID}:syncthing-diff-modal`);
-}
-
 export function exists(vault: SharedVault, file: string): boolean {
 	return existsSync(path.join(vault.vaultPath, file));
 }
 
-/** Files moved to the trash: Obsidian's `.trash`, or the system trash of this run. */
-export function trashed(vault: SharedVault): string[] {
+/**
+ * Files in the trash: Obsidian's `.trash`, or the system trash (this run's on
+ * Linux, the user's on macOS). Pass an earlier result to get only what was added since.
+ */
+export function trashed(vault: SharedVault, before: string[] = []): string[] {
 	const dirs = [
 		path.join(vault.vaultPath, ".trash"),
 		process.platform === "darwin"
 			? path.join(process.env.HOME ?? "", ".Trash")
 			: path.join(process.env.XDG_DATA_HOME ?? "", "Trash", "files"),
 	];
-	return dirs.flatMap((dir) => {
-		try {
-			return readdirSync(dir, { recursive: true }).map(String);
-		} catch {
-			return [];
-		}
-	});
+	const earlier = new Set(before);
+	return dirs
+		.flatMap((dir) => {
+			try {
+				return readdirSync(dir, { recursive: true }).map(String);
+			} catch {
+				return [];
+			}
+		})
+		.filter((file) => !earlier.has(file));
 }
 
 /** Renders the plugin's settings tab, as Obsidian does when it is opened. */

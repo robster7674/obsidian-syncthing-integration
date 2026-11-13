@@ -146,8 +146,11 @@ export async function startSyncthing(binary: string, info: InstanceInfo): Promis
 		{ stdio: "ignore", detached: true, env: { ...process.env, STNODEFAULTFOLDER: "1" } },
 	);
 	const syncthing = new Syncthing(info);
+	const spawnFailed = new Promise<never>((_, reject) =>
+		child.once("error", (error) => reject(new Error(`Could not run ${binary}: ${error.message}`))),
+	);
 	try {
-		await configure(syncthing);
+		await Promise.race([configure(syncthing), spawnFailed]);
 	} catch (error) {
 		stopSyncthing(child);
 		throw error;

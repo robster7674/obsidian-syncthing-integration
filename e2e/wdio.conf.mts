@@ -91,6 +91,20 @@ export const config: WebdriverIO.Config = {
 		);
 	},
 
+	afterHook(test, context, { passed, error }) {
+		if (passed) return;
+		appendFileSync(
+			resultsFile,
+			JSON.stringify({
+				obsidian: browser.getObsidianVersion(),
+				suite: test.parent,
+				title: `HOOK: ${test.parent} ${test.title}, so the cases after it did not run`,
+				passed: false,
+				error: error?.message,
+			}) + "\n",
+		);
+	},
+
 	onComplete() {
 		for (const child of processes) stopSyncthing(child);
 		writeSummary(resultsFile, path.join(workDir, "summary.md"));

@@ -9,7 +9,7 @@
 		"build": "pnpm lint && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"prepare": "husky install",
-		"lint": "tsc -noEmit -skipLibCheck && tsc -p e2e && svelte-check --tsconfig ./tsconfig.json && eslint . --ext .ts,.svelte src",
+		"lint": "tsc -noEmit -skipLibCheck && tsc -p e2e && svelte-check --tsconfig ./tsconfig.json && eslint . --ext .ts,.mts,.svelte src",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

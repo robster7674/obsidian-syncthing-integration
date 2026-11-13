@@ -199,7 +199,7 @@ describe("Settings and connection", function () {
 		}
 	});
 
-	it("L1: a redirect to another origin, with the API key", async function () {
+	it("L1: a redirect to another origin, with the API key (observed)", async function () {
 		const listener = new Listener(18391);
 		const proxy = new ReverseProxy(vault.a.url, 18392);
 		await Promise.all([listener.start(), proxy.start()]);
@@ -216,6 +216,8 @@ describe("Settings and connection", function () {
 						? "known limitation confirmed: the API key reached the other origin"
 						: "redirect followed without the API key",
 			);
+			// An observation, not a requirement: it fails only when the redirect was never exercised.
+			expect(proxy.seen.some((s) => s.path.startsWith("/syncthing/rest/"))).toBe(true);
 		} finally {
 			await connectPlugin(vault);
 			await Promise.all([listener.stop(), proxy.stop()]);

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
@@ -105,9 +105,7 @@ describe("Vault folder and .stignore", function () {
 	});
 
 	it("F7: a vault without .stignore shows an empty list, and adding creates it", async function () {
-		writeFileSync(stignore(), "");
-		const { rmSync } = await import("node:fs");
-		rmSync(stignore());
+		rmSync(stignore(), { force: true });
 		await showSettingTab();
 		try {
 			await browser.waitUntil(async () => (await settingText()).includes("Add pattern"), { timeout: 15_000 });

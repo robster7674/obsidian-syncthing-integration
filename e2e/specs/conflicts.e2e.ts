@@ -265,22 +265,24 @@ describe("Conflicts: detection, previews and resolution", function () {
 	describe("Resolution", function () {
 		it("R1: Accept original trashes the conflict and leaves the original", async function () {
 			const conflict = await makeConflict(vault, "r/One.md", "One on A\n", "One on B\n");
+			const before = trashed(vault);
 			await openDiff("r/One.md");
 			await clickButton("Accept original");
 			await waitFor("the conflict to go", () => !exists(vault, conflict), 10_000);
 			expect(read(vault, "r/One.md")).toBe("One on A\n");
-			expect(trashed(vault).some((f) => f.includes(path.basename(conflict)))).toBe(true);
+			expect(trashed(vault, before).some((f) => f.includes(path.basename(conflict)))).toBe(true);
 		});
 
 		it("R2: Accept conflict changes keeps the path and links, and trashes the old text", async function () {
 			await writeOnPeer(vault, "r/Linker.md", "See [[Two]].\n");
 			const conflict = await makeConflict(vault, "r/Two.md", "Two on A\n", "Two on B\n");
+			const before = trashed(vault);
 			await openDiff("r/Two.md");
 			await clickButton("Accept conflict changes");
 			await waitFor("the conflict to go", () => !exists(vault, conflict), 10_000);
 			expect(read(vault, "r/Two.md")).toBe("Two on B\n");
 			expect(read(vault, "r/Linker.md")).toBe("See [[Two]].\n");
-			const trash = trashed(vault);
+			const trash = trashed(vault, before);
 			expect(trash.some((f) => /Two\.before-accepting-conflict-.*\.md$/.test(f))).toBe(true);
 			expect(trash.some((f) => f.includes(path.basename(conflict)))).toBe(true);
 			note(`trash: ${trash.filter((f) => f.includes("Two")).join(", ")}`);
@@ -294,6 +296,7 @@ describe("Conflicts: detection, previews and resolution", function () {
 
 		it("R3: a merge is saved into the original, with a backup", async function () {
 			const conflict = await makeConflict(vault, "r/Three.md", "line A\n", "line B\n");
+			const before = trashed(vault);
 			await openDiff("r/Three.md");
 			await clickButton("Open in Merge Editor");
 			await browser.waitUntil(() => browser.executeObsidian(() => !!document.querySelector(".syncthing-merge-editor .cm-content")));
@@ -307,7 +310,7 @@ describe("Conflicts: detection, previews and resolution", function () {
 			if ((await modalText()).includes("still unresolved")) await clickButton("Yes");
 			await waitFor("the conflict to go", () => !exists(vault, conflict), 10_000);
 			expect(read(vault, "r/Three.md")).toBe("line A and B\n");
-			expect(trashed(vault).some((f) => /Three\.before-merge-.*\.md$/.test(f))).toBe(true);
+			expect(trashed(vault, before).some((f) => /Three\.before-merge-.*\.md$/.test(f))).toBe(true);
 		});
 
 		it("R4: saving without editing, with differences left, keeps the left side", async function () {
