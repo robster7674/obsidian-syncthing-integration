@@ -18,49 +18,86 @@ export class PluginDevModeController {
 		new Notice(
 			`Parameters: ${distinctFiles} distinct files, ${conflictsPerFile} conflicts per file.`
 		);
-		const mainFileNotice = new Notice("");
-		const conflictFilesNotice = new Notice("");
-		for (let k = 0; k < distinctFiles; k++) {
-			mainFileNotice.setMessage(
-				`Progress (main files): ${k}/${distinctFiles}`
-			);
-			// Create main file.
-			const mainFile = await this.plugin.app.vault.create(
-				`${loremIpsum({ count: 1, units: "words" })}.md`,
-				`# ${loremIpsum({ count: 1, units: "words" })}\n\n${loremIpsum({
-					count: 1,
-					units: "paragraphs",
-				})}`
-			);
-
-			// Create conflict files corresponding to main file.
-			new Notice("Creating conflict files...");
-			for (let j = 0; j < conflictsPerFile; j++) {
-				conflictFilesNotice.setMessage(
-					`Progress (conflicts): ${j}/${conflictsPerFile}`
+		const mainFileNotice = new Notice("", 0);
+		const conflictFilesNotice = new Notice("", 0);
+		let created = 0;
+		try {
+			for (let k = 0; k < distinctFiles; k++) {
+				mainFileNotice.setMessage(
+					`Progress (main files): ${k}/${distinctFiles}`
 				);
-				const date = randomDate({
-					from: new Date(2020, 0, 1),
-					to: new Date(),
-				});
-				const dateString = date
-					.toISOString()
-					.replace(/-/gm, "")
-					.replace("T", "-")
-					.replace(/:|\.\d{3}Z/gm, "");
-				const deviceID = Array.from(
-					{ length: 7 },
-					() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]
-				).join("");
-				await this.plugin.app.vault.create(
-					`${mainFile.basename}.sync-conflict-${dateString}-${deviceID}.md`,
-					`# ${loremIpsum({
+				// Create main file.
+				const mainFile = await this.plugin.app.vault.create(
+					this.freeMainPath(loremIpsum({ count: 1, units: "words" })),
+					`# ${loremIpsum({ count: 1, units: "words" })}\n\n${loremIpsum({
 						count: 1,
-						units: "words",
-					})}\n\n${loremIpsum({ count: 2, units: "paragraphs" })}`
+						units: "paragraphs",
+					})}`
 				);
+				created++;
+
+				// Create conflict files corresponding to main file.
+				new Notice("Creating conflict files...");
+				for (let j = 0; j < conflictsPerFile; j++) {
+					conflictFilesNotice.setMessage(
+						`Progress (conflicts): ${j}/${conflictsPerFile}`
+					);
+					await this.plugin.app.vault.create(
+						this.freeConflictPath(mainFile.basename),
+						`# ${loremIpsum({
+							count: 1,
+							units: "words",
+						})}\n\n${loremIpsum({ count: 2, units: "paragraphs" })}`
+					);
+					created++;
+				}
 			}
+		} catch (error) {
+			new Notice(
+				`Generating conflicts stopped after ${created} of ${distinctFiles * (conflictsPerFile + 1)} files: ${error instanceof Error ? error.message : String(error)}`
+			);
+		} finally {
+			mainFileNotice.hide();
+			conflictFilesNotice.hide();
 		}
+	}
+
+	/** Whether a path, or a conflict of it, exists, ignoring case like most file systems. */
+	private isTaken(basename: string, extension: string): boolean {
+		const path = `${basename}.${extension}`.toLowerCase();
+		const conflicts = `${basename}.sync-conflict-`.toLowerCase();
+		return this.plugin.app.vault.getFiles().some((file) => {
+			const existing = file.path.toLowerCase();
+			return existing === path || existing.startsWith(conflicts);
+		});
+	}
+
+	private freeMainPath(basename: string): string {
+		let name = basename;
+		for (let n = 1; this.isTaken(name, "md"); n++) {
+			name = `${basename} ${n}`;
+		}
+		return `${name}.md`;
+	}
+
+	private freeConflictPath(basename: string): string {
+		let name: string;
+		do {
+			const dateString = randomDate({
+				from: new Date(2020, 0, 1),
+				to: new Date(),
+			})
+				.toISOString()
+				.replace(/-/gm, "")
+				.replace("T", "-")
+				.replace(/:|\.\d{3}Z/gm, "");
+			const deviceID = Array.from(
+				{ length: 7 },
+				() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]
+			).join("");
+			name = `${basename}.sync-conflict-${dateString}-${deviceID}`;
+		} while (this.isTaken(name, "md"));
+		return `${name}.md`;
 	}
 
 	async purgeVault() {
@@ -124,6 +161,7 @@ export class DevModeModal extends Modal {
 					.setCta()
 					.setButtonText("Generate")
 					.onClick(async () => {
+						button.setDisabled(true);
 						await this.pluginDevModeController.generateSyncthingConflicts(
 							this.distinctFiles,
 							this.conflictsPerFile
