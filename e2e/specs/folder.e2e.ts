@@ -43,6 +43,13 @@ async function typeInto(placeholder: string, text: string) {
 describe("Vault folder and .stignore", function () {
 	let vault: SharedVault;
 	const stignore = () => path.join(vault.vaultPath, ".stignore");
+	// Obsidian truncates a file before writing it, so wait for the whole content.
+	const waitForContent = async (expected: string) => {
+		await browser
+			.waitUntil(() => existsSync(stignore()) && readFileSync(stignore(), "utf8") === expected, { timeout: 10_000 })
+			.catch(() => undefined);
+		expect(readFileSync(stignore(), "utf8")).toBe(expected);
+	};
 
 	before(async function () {
 		vault = await shareVault("folder");
@@ -128,8 +135,7 @@ describe("Vault folder and .stignore", function () {
 			await browser.waitUntil(async () => (await settingText()).includes("!/notes/keep.md"), { timeout: 15_000 });
 			await typeInto("Enter a pattern…", "*.tmp");
 			await clickButton("Add pattern", ".e2e-setting-tab");
-			await browser.waitUntil(() => readFileSync(stignore(), "utf8") !== original, { timeout: 10_000 });
-			expect(readFileSync(stignore(), "utf8")).toBe(original + "*.tmp\r\n");
+			await waitForContent(original + "*.tmp\r\n");
 			await vault.a.scan(vault.folderId);
 			const { ignore } = await vault.a.request<{ ignore: string[] }>("GET", `/rest/db/ignores?folder=${vault.folderId}`);
 			expect(ignore).toEqual(["// keep my notes", "!/notes/keep.md", "", "/notes/*", "*.tmp"]);
@@ -146,8 +152,7 @@ describe("Vault folder and .stignore", function () {
 			await typeInto("Type to search for a file", "a/Note.md");
 			await browser.pause(1000);
 			await clickButton("Add file/folder", ".e2e-setting-tab");
-			await browser.waitUntil(() => readFileSync(stignore(), "utf8").includes("a/Note.md"), { timeout: 10_000 });
-			expect(readFileSync(stignore(), "utf8")).toBe("/notes/*\n*.tmp\n/a/Note.md\n");
+			await waitForContent("/notes/*\n*.tmp\n/a/Note.md\n");
 
 			await takeNotices();
 			await typeInto("Enter a pattern…", "*.tmp");
@@ -161,8 +166,7 @@ describe("Vault folder and .stignore", function () {
 				);
 				(item?.querySelector("button") as HTMLButtonElement).click();
 			});
-			await browser.waitUntil(() => !readFileSync(stignore(), "utf8").includes("*.tmp"), { timeout: 10_000 });
-			expect(readFileSync(stignore(), "utf8")).toBe("/notes/*\n/a/Note.md\n");
+			await waitForContent("/notes/*\n/a/Note.md\n");
 		} finally {
 			await hideSettingTab();
 		}

@@ -100,4 +100,5 @@ jobs:
             .e2e/summary.md
             .e2e/results.jsonl
             .e2e/syncthing-*/syncthing.log
+          include-hidden-files: true
           if-no-files-found: ignore

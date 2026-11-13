@@ -99,8 +99,10 @@ describe("Sync status and safe-to-close", function () {
 		await waitForKind("synced", 60_000);
 		const kinds = await recorded();
 		note(kinds.join(" → "));
-		expect(kinds.some((k) => ["unscanned", "scanning", "syncing", "waiting"].includes(k))).toBe(true);
-		expect(kinds.at(-1)).toBe("synced");
+		// Obsidian may save its own files afterwards, so the edit's own round is what counts.
+		const busy = kinds.findIndex((k) => ["unscanned", "scanning", "syncing", "waiting"].includes(k));
+		expect(busy).toBeGreaterThanOrEqual(0);
+		expect(kinds.indexOf("synced", busy)).toBeGreaterThan(busy);
 	});
 
 	it("T3: an edit while the other device is offline says it is only here", async function () {
