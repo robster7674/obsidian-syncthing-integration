@@ -18,15 +18,38 @@ export class PluginDevModeController {
 		new Notice(
 			`Parameters: ${distinctFiles} distinct files, ${conflictsPerFile} conflicts per file.`
 		);
-		const mainFileNotice = new Notice("");
-		const conflictFilesNotice = new Notice("");
+		const mainFileNotice = new Notice("", 0);
+		const conflictFilesNotice = new Notice("", 0);
+		try {
+			await this.createConflicts(
+				distinctFiles,
+				conflictsPerFile,
+				mainFileNotice,
+				conflictFilesNotice
+			);
+		} catch (error) {
+			new Notice(
+				`Generating conflicts stopped: ${error instanceof Error ? error.message : String(error)}`
+			);
+		} finally {
+			mainFileNotice.hide();
+			conflictFilesNotice.hide();
+		}
+	}
+
+	private async createConflicts(
+		distinctFiles: number,
+		conflictsPerFile: number,
+		mainFileNotice: Notice,
+		conflictFilesNotice: Notice
+	) {
 		for (let k = 0; k < distinctFiles; k++) {
 			mainFileNotice.setMessage(
 				`Progress (main files): ${k}/${distinctFiles}`
 			);
 			// Create main file.
 			const mainFile = await this.plugin.app.vault.create(
-				`${loremIpsum({ count: 1, units: "words" })}.md`,
+				this.freePath(loremIpsum({ count: 1, units: "words" }), "md"),
 				`# ${loremIpsum({ count: 1, units: "words" })}\n\n${loremIpsum({
 					count: 1,
 					units: "paragraphs",
@@ -53,7 +76,10 @@ export class PluginDevModeController {
 					() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[Math.floor(Math.random() * 32)]
 				).join("");
 				await this.plugin.app.vault.create(
-					`${mainFile.basename}.sync-conflict-${dateString}-${deviceID}.md`,
+					this.freePath(
+						`${mainFile.basename}.sync-conflict-${dateString}-${deviceID}`,
+						"md"
+					),
 					`# ${loremIpsum({
 						count: 1,
 						units: "words",
@@ -61,6 +87,14 @@ export class PluginDevModeController {
 				);
 			}
 		}
+	}
+
+	private freePath(basename: string, extension: string): string {
+		let path = `${basename}.${extension}`;
+		for (let n = 1; this.plugin.app.vault.getAbstractFileByPath(path); n++) {
+			path = `${basename} ${n}.${extension}`;
+		}
+		return path;
 	}
 
 	async purgeVault() {
