@@ -41,16 +41,21 @@ async function waitForKind(kind: string, timeout = 60_000): Promise<Shown> {
 	return last!;
 }
 
-/** Records every status kind the plugin shows from now on. */
+/** Records every status the plugin shows from now on, as it shows it. */
 async function startRecording() {
 	await browser.executeObsidian(({ plugins }) => {
-		const w = window as unknown as { e2eKinds: string[]; e2eTimer: number };
+		const w = window as unknown as { e2eKinds: string[] };
 		w.e2eKinds = [];
-		window.clearInterval(w.e2eTimer);
-		w.e2eTimer = window.setInterval(() => {
-			const kind = plugins.syncthingIntegration.syncStatus?.kind ?? "none";
+		const plugin = plugins.syncthingIntegration as unknown as {
+			showSyncStatus(status?: { kind: string }): void;
+			e2eShow?: (status?: { kind: string }) => void;
+		};
+		plugin.e2eShow ??= plugin.showSyncStatus.bind(plugin);
+		plugin.showSyncStatus = (status) => {
+			const kind = status?.kind ?? "none";
 			if (w.e2eKinds[w.e2eKinds.length - 1] !== kind) w.e2eKinds.push(kind);
-		}, 50);
+			plugin.e2eShow?.(status);
+		};
 	});
 }
 
