@@ -27,8 +27,16 @@ describe("SyncthingFolderModel", () => {
 		expect(folder.filesystemType).toBe("basic");
 		expect(folder.type).toBe("sendreceive");
 		expect(folder.maxConflicts).toBe(10);
+		expect(folder.paused).toBe(false);
 		expect(folder.devices).toHaveLength(2);
 		expect(folder.devices[0].deviceID).toContain("AAAAAAA");
+	});
+
+	it("reads whether the folder is paused", () => {
+		const folders = readFixtureJson<Record<string, unknown>[]>("folders.json");
+		const folder = SyncthingFolderModel.fromJSON(JSON.stringify({ ...folders[0], paused: true }));
+
+		expect(folder.paused).toBe(true);
 	});
 
 	it("throws when devices are missing", () => {
