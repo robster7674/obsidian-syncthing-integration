@@ -49,3 +49,7 @@ result
 
 # Vitest coverage output
 coverage
+.e2e
+.obsidian-cache
+.cache
+.e2e-run.log

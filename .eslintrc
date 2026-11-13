@@ -23,6 +23,15 @@
 	"overrides": [
 		{
 			"files": [
+				"e2e/**/*.ts",
+				"e2e/**/*.mts"
+			],
+			"parserOptions": {
+				"project": "./e2e/tsconfig.json"
+			}
+		},
+		{
+			"files": [
 				"*.svelte"
 			],
 			"parser": "svelte-eslint-parser",

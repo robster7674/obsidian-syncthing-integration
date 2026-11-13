@@ -1,0 +1,104 @@
+name: End-to-end tests
+
+# Runs the Obsidian test plan (#13) in real Obsidian, against two real
+# Syncthing instances that share the test vault.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      obsidian_versions:
+        description: 'Obsidian versions, as "app/installer" pairs (default: minAppVersion and latest)'
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  SYNCTHING_VERSION: v2.1.6
+
+jobs:
+  e2e:
+    name: e2e (${{ matrix.os }})
+    # Release PRs only bump version files.
+    if: "${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/') }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            syncthing: syncthing-linux-amd64
+            archive: tar.gz
+            sha256: 524ef4e1df1850b719e2378c8369956f4e5f2ab9a46fdf7f45f2b925012147aa
+          - os: macos-latest
+            syncthing: syncthing-macos-arm64
+            archive: zip
+            sha256: f86bfa0bdbb5b1b13229a7e5643e898e3c4e017a4fff6dd525994ebaf28ff6e2
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.34.5"
+          run_install: false
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - uses: actions/cache@v4
+        name: Cache Obsidian downloads
+        with:
+          path: .obsidian-cache
+          key: ${{ runner.os }}-obsidian-${{ inputs.obsidian_versions || 'default' }}-${{ hashFiles('manifest.json') }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the plugin
+        run: node esbuild.config.mjs production
+      - name: Download Syncthing
+        shell: bash
+        run: |
+          name="${{ matrix.syncthing }}-${SYNCTHING_VERSION}"
+          file="$name.${{ matrix.archive }}"
+          mkdir -p .cache/syncthing && cd .cache/syncthing
+          curl -fsSLO "https://github.com/syncthing/syncthing/releases/download/${SYNCTHING_VERSION}/$file"
+          echo "${{ matrix.sha256 }}  $file" | shasum -a 256 -c -
+          if [ "${{ matrix.archive }}" = zip ]; then unzip -q "$file"; else tar xzf "$file"; fi
+          echo "SYNCTHING_BIN=$PWD/$name/syncthing" >> "$GITHUB_ENV"
+      - name: Allow Electron's sandbox
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - name: Run the test plan
+        shell: bash
+        env:
+          OBSIDIAN_VERSIONS: ${{ inputs.obsidian_versions }}
+        run: |
+          [ -n "$OBSIDIAN_VERSIONS" ] || unset OBSIDIAN_VERSIONS
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:e2e; else pnpm test:e2e; fi
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.os }}
+          path: |
+            .e2e/summary.md
+            .e2e/results.jsonl
+            .e2e/syncthing-*/syncthing.log
+          include-hidden-files: true
+          if-no-files-found: ignore
