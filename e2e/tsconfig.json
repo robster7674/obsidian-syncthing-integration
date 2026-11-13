@@ -1,0 +1,18 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["svelte", "node", "mocha", "@wdio/globals/types", "wdio-obsidian-service"],
+		"baseUrl": "..",
+		"verbatimModuleSyntax": false,
+		"useDefineForClassFields": false,
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"skipLibCheck": true,
+		"isolatedModules": true
+	},
+	"include": ["**/*.ts", "**/*.mts"]
+}
