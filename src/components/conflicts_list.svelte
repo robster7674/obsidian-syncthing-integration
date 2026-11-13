@@ -29,7 +29,6 @@
 						value as keyof typeof sortOptions,
 						parentModal.syncthingController,
 					);
-					console.log("dropdown", conflicts);
 				});
 			});
 		conflicts = sortFilesBy(
@@ -40,7 +39,6 @@
 	});
 
 	parentModal.titleEl.setText("Syncthing Conflicts");
-	$: if (conflicts) console.log("conflicts", conflicts);
 </script>
 
 {#if unrecognised.length > 0}
