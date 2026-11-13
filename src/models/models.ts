@@ -36,7 +36,8 @@ export class SyncthingFolderModel extends SyncthingFolder {
 			parsedJSON["type"] as SyncTypes,
 			// TODO: refactor this ^ w/ a type guard. See https://stackoverflow.com/a/51529486/20502385
 			reducedDeviceInfos,
-			parsedJSON["maxConflicts"]
+			parsedJSON["maxConflicts"],
+			"paused" in parsedJSON && parsedJSON.paused === true
 		);
 	}
 }

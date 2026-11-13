@@ -304,6 +304,14 @@ export class SyncStatusMonitor {
 			return found instanceof Failure ? found : new Failure("Superseded.");
 		}
 		const folder = found.folder;
+		// Syncthing 2 reports no state for a paused folder, and no completion for its devices.
+		if (folder.paused) {
+			return {
+				folder,
+				status: { state: "paused", needItems: 0, needBytes: 0, errors: 0, error: "" },
+				peers: new Map(),
+			};
+		}
 		const [status, { devices, myID, connected }, lastScan] = await Promise.all([
 			this.deps.rest.getFolderStatus(folder.id),
 			this.deps.rest.getDeviceStates(),
@@ -335,7 +343,8 @@ export class SyncStatusMonitor {
 	/** Updates the state from one event, or asks for a new snapshot. */
 	private apply(event: SyncthingEvent): "reload" | undefined {
 		const data = event.data;
-		const ours = data.folder === this.folder?.id;
+		// A paused folder's state only changes with its configuration.
+		const ours = data.folder === this.folder?.id && !this.folder?.paused;
 		const peer = (id: unknown) => (typeof id === "string" ? this.peers.get(id) : undefined);
 		switch (event.type) {
 			case "ConfigSaved":

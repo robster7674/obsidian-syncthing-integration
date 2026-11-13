@@ -199,6 +199,36 @@ group("SyncStatusMonitor", () => {
 		await vi.waitFor(() => expect(syncthing.deps.findFolder).toHaveBeenCalledTimes(2));
 	});
 
+	it("says paused for a paused folder, without asking for its completion", async () => {
+		// What Syncthing 2 answers for a paused folder.
+		const syncthing = fakeSyncthing();
+		syncthing.deps.findFolder = vi.fn(async () => ({
+			folder: { ...FOLDER, paused: true },
+			vaultPath: "",
+			chosen: false,
+		}));
+		syncthing.rest.getFolderStatus.mockResolvedValue({ ...IDLE, state: "" });
+		syncthing.rest.getCompletion.mockRejectedValue(new Error("HTTP 404: folder is paused"));
+		syncthing.monitor.start();
+
+		await vi.waitFor(() => expect(syncthing.statuses).toEqual([{ kind: "paused" }]));
+		expect(syncthing.rest.getCompletion).not.toHaveBeenCalled();
+
+		syncthing.send(
+			{ id: 8, type: "FolderSummary", data: { folder: "vault", summary: { ...IDLE, state: "" } } },
+			{ id: 9, type: "StateChanged", data: { folder: "vault", from: "", to: "idle" } },
+		);
+		await vi.waitFor(() => expect(syncthing.longPolls()).toHaveLength(2));
+		expect(syncthing.statuses.at(-1)).toEqual({ kind: "paused" });
+
+		vi.mocked(syncthing.deps.findFolder).mockResolvedValue({ folder: FOLDER, vaultPath: "", chosen: false });
+		syncthing.rest.getFolderStatus.mockResolvedValue({ ...IDLE });
+		syncthing.rest.getCompletion.mockResolvedValue({ completion: 100, needItems: 0, remoteState: "valid" });
+		syncthing.send({ id: 10, type: "ConfigSaved", data: {} });
+
+		await vi.waitFor(() => expect(syncthing.statuses.at(-1)).toEqual({ kind: "synced" }));
+	});
+
 	it("starts no request while the window is hidden, and reads again when shown", async () => {
 		const syncthing = fakeSyncthing();
 		syncthing.setHidden(true);

@@ -26,7 +26,8 @@ export class SyncthingFolder {
 		public filesystemType: string,
 		public type: SyncTypes,
 		public devices: ReducedSyncthingDevice[],
-		public maxConflicts: number
+		public maxConflicts: number,
+		public paused = false
 	) {}
 }
 
